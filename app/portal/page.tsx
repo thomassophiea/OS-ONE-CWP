@@ -90,13 +90,12 @@ export default async function PortalPage({
           monitored and logged for security and operational purposes.
         </div>
 
-        {createError ? (
+        {createError && (
           <div className="rounded-lg bg-red-50 border border-red-200 p-4 text-sm text-red-700">
             {createError}
           </div>
-        ) : (
-          <AcceptButton sessionId={sessionId!} />
         )}
+        {sessionId && <AcceptButton sessionId={sessionId} />}
 
         <p className="mt-6 text-center text-xs text-gray-400">OS-ONE-CWP</p>
       </div>
