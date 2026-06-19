@@ -55,7 +55,12 @@ export function buildSignedEcpCallbackUrl(p: EcpCallbackParams): string {
   ];
   if (p.dest) params.push(["dest", p.dest]);
 
-  params.sort(([a], [b]) => awsEncode(a).localeCompare(awsEncode(b)));
+  // AWS SigV4 requires byte-order sort on the encoded key names
+  params.sort(([a], [b]) => {
+    const ea = awsEncode(a);
+    const eb = awsEncode(b);
+    return ea < eb ? -1 : ea > eb ? 1 : 0;
+  });
 
   const canonicalQS = params
     .map(([k, v]) => `${awsEncode(k)}=${awsEncode(v)}`)
@@ -67,7 +72,7 @@ export function buildSignedEcpCallbackUrl(p: EcpCallbackParams): string {
     canonicalQS,
     `host:${host}\n`,
     "host",
-    sha256Hex(""), // empty body
+    "UNSIGNED-PAYLOAD", // presigned URL convention used by Extreme ECP
   ].join("\n");
 
   const stringToSign = [
