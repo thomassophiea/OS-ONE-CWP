@@ -53,13 +53,18 @@ export async function POST(request: NextRequest) {
 
   // XCC ECP authorization: redirect client browser to the controller callback URL.
   // Controller validates the token, authorizes the MAC, and grants internet access.
+  // Note: token appears in the query string because that is the XCC ECP protocol requirement.
   let xccCallbackUrl: string | null = null;
   if (session.hwcIp && session.sessionToken) {
-    const port =
-      session.hwcPort && session.hwcPort !== "443"
-        ? `:${session.hwcPort}`
-        : "";
-    xccCallbackUrl = `https://${session.hwcIp}${port}/ecp/redirect?token=${encodeURIComponent(session.sessionToken)}`;
+    // Reject non-numeric port values before interpolating into a URL.
+    const portValid = !session.hwcPort || /^\d{1,5}$/.test(session.hwcPort);
+    if (portValid) {
+      const port =
+        session.hwcPort && session.hwcPort !== "443"
+          ? `:${session.hwcPort}`
+          : "";
+      xccCallbackUrl = `https://${session.hwcIp}${port}/ecp/redirect?token=${encodeURIComponent(session.sessionToken)}`;
+    }
   }
 
   const candidateUrl =
@@ -68,10 +73,10 @@ export async function POST(request: NextRequest) {
     session.successUrl ??
     null;
 
-  // XCC callback URLs are server-constructed from trusted stored fields — skip safe redirect check.
-  const safeUrl = xccCallbackUrl ?? getSafeRedirectUrl(candidateUrl, internalFallback);
+  // getSafeRedirectUrl validates the controller hostname against ALLOWED_REDIRECT_DOMAINS.
+  // Set ALLOWED_REDIRECT_DOMAINS=apcp.ezcloudx.com (or your controller's hostname) in env.
+  const safeUrl = getSafeRedirectUrl(candidateUrl, internalFallback);
   const wasBlocked =
-    !xccCallbackUrl &&
     candidateUrl !== null &&
     safeUrl === internalFallback &&
     candidateUrl !== internalFallback;
