@@ -22,6 +22,11 @@ export function getSafeRedirectUrl(
 ): string {
   if (!inputUrl) return fallbackUrl;
 
+  // Reject control characters (including \t \n \r) before any structural check.
+  // A parser-differential attack could embed these before // to bypass prefix guards.
+  // eslint-disable-next-line no-control-regex
+  if (/[\x00-\x20]/.test(inputUrl)) return fallbackUrl;
+
   // Allow relative paths — but reject protocol-relative URLs (//host) which
   // browsers treat as absolute. Both / and \ variants must be blocked.
   if (inputUrl.startsWith("/")) {

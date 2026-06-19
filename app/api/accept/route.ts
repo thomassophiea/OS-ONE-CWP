@@ -39,6 +39,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Session not found" }, { status: 404 });
   }
 
+  if (session.acceptedTerms) {
+    return NextResponse.json(
+      { error: "Session already accepted" },
+      { status: 409 }
+    );
+  }
+
   const appBaseUrl = process.env.APP_BASE_URL ?? "";
   const internalFallback =
     process.env.DEFAULT_SUCCESS_URL ??
