@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSafeRedirectUrl } from "@/lib/captive/safeRedirect";
+import { buildSignedEcpCallbackUrl } from "@/lib/captive/signEcpCallback";
 
 export async function POST(request: NextRequest) {
   let sessionId: string | undefined;
@@ -63,20 +64,37 @@ export async function POST(request: NextRequest) {
     .map((d) => d.trim().toLowerCase())
     .filter(Boolean);
 
+  // Build XCC ECP callback URL signed with AWS SigV4 (shared secret from XCC config).
+  // Path /ext_approval.php with mandatory params: token, wlan, username.
+  // Requires XCC_IDENTITY and XCC_SHARED_SECRET env vars to match XCC portal config.
+  const xccIdentity = process.env.XCC_IDENTITY;
+  const xccSharedSecret = process.env.XCC_SHARED_SECRET;
+
   let xccCallbackUrl: string | null = null;
-  if (session.hwcIp && session.sessionToken && allowedDomains.length > 0) {
+  if (
+    session.hwcIp &&
+    session.sessionToken &&
+    session.wlan &&
+    xccIdentity &&
+    xccSharedSecret &&
+    allowedDomains.length > 0
+  ) {
     const hwcHostLower = session.hwcIp.toLowerCase();
     const hostAllowed = allowedDomains.some(
       (d) => hwcHostLower === d || hwcHostLower.endsWith(`.${d}`)
     );
-    // Reject non-numeric port values before interpolating into a URL.
     const portValid = !session.hwcPort || /^\d{1,5}$/.test(session.hwcPort);
     if (hostAllowed && portValid) {
-      const port =
-        session.hwcPort && session.hwcPort !== "443"
-          ? `:${session.hwcPort}`
-          : "";
-      xccCallbackUrl = `https://${session.hwcIp}${port}/ecp/redirect?token=${encodeURIComponent(session.sessionToken)}`;
+      xccCallbackUrl = buildSignedEcpCallbackUrl({
+        hwcIp: session.hwcIp,
+        hwcPort: session.hwcPort,
+        token: session.sessionToken,
+        wlan: session.wlan,
+        clientMac: session.clientMac ?? "guest",
+        dest: session.dest,
+        identity: xccIdentity,
+        sharedSecret: xccSharedSecret,
+      });
     }
   }
 
