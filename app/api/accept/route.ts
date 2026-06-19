@@ -127,11 +127,15 @@ export async function POST(request: NextRequest) {
           ecpAuthorized = true;
         }
       } catch (err) {
+        const cause =
+          err instanceof Error && err.cause
+            ? String(err.cause)
+            : undefined;
         ecpProbe = {
           status: 0,
           location: null,
           body: "",
-          error: err instanceof Error ? err.message : String(err),
+          error: `${err instanceof Error ? err.message : String(err)}${cause ? ` | cause: ${cause}` : ""}`,
         };
       }
     }
