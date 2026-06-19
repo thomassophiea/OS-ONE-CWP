@@ -12,6 +12,13 @@ export interface ExtractedSessionFields {
   userIp: string | null;
   redirectUrl: string | null;
   successUrl: string | null;
+  hwcIp: string | null;
+  hwcPort: string | null;
+  dest: string | null;
+  ap: string | null;
+  aploc: string | null;
+  role: string | null;
+  sn: string | null;
 }
 
 function first(
@@ -64,5 +71,12 @@ export function extractSessionFields(
       "destination"
     ),
     successUrl: first(query, "success_url", "successUrl"),
+    hwcIp: first(query, "hwc_ip", "hwcIp"),
+    hwcPort: first(query, "hwc_port", "hwcPort"),
+    dest: first(query, "dest"),
+    ap: first(query, "ap"),
+    aploc: first(query, "aploc"),
+    role: first(query, "role"),
+    sn: first(query, "sn"),
   };
 }

@@ -33,6 +33,13 @@ model GuestSession {
   userAgent           String?
   redirectUrl         String?
   successUrl          String?
+  hwcIp               String?
+  hwcPort             String?
+  dest                String?
+  ap                  String?
+  aploc               String?
+  role                String?
+  sn                  String?
   rawQuery            Json?
   rawHeaders          Json?
   acceptedTerms       Boolean       @default(false)

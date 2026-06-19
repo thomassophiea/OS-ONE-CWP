@@ -51,13 +51,27 @@ export async function POST(request: NextRequest) {
     process.env.DEFAULT_SUCCESS_URL ??
     `${appBaseUrl}/success?session=${sessionId}`;
 
+  // XCC ECP authorization: redirect client browser to the controller callback URL.
+  // Controller validates the token, authorizes the MAC, and grants internet access.
+  let xccCallbackUrl: string | null = null;
+  if (session.hwcIp && session.sessionToken) {
+    const port =
+      session.hwcPort && session.hwcPort !== "443"
+        ? `:${session.hwcPort}`
+        : "";
+    xccCallbackUrl = `https://${session.hwcIp}${port}/ecp/redirect?token=${encodeURIComponent(session.sessionToken)}`;
+  }
+
   const candidateUrl =
+    xccCallbackUrl ??
     session.redirectUrl ??
     session.successUrl ??
     null;
 
-  const safeUrl = getSafeRedirectUrl(candidateUrl, internalFallback);
+  // XCC callback URLs are server-constructed from trusted stored fields — skip safe redirect check.
+  const safeUrl = xccCallbackUrl ?? getSafeRedirectUrl(candidateUrl, internalFallback);
   const wasBlocked =
+    !xccCallbackUrl &&
     candidateUrl !== null &&
     safeUrl === internalFallback &&
     candidateUrl !== internalFallback;
