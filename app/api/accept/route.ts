@@ -71,14 +71,6 @@ export async function POST(request: NextRequest) {
   const xccSharedSecret = process.env.XCC_SHARED_SECRET;
 
   let xccCallbackUrl: string | null = null;
-  type EcpProbe = {
-    status: number;
-    location: string | null;
-    body: string;
-    error?: string;
-  };
-  let ecpProbe: EcpProbe | null = null;
-  let ecpAuthorized = false;
 
   if (
     session.hwcIp &&
@@ -104,60 +96,21 @@ export async function POST(request: NextRequest) {
         identity: xccIdentity,
         sharedSecret: xccSharedSecret,
       });
-
-      // Call the XCC ECP endpoint server-side so we can see the response and log it.
-      // A 3xx response means the controller accepted the request and authorized the MAC;
-      // the client can then be sent to the success page instead of to apcp.ezcloudx.com.
-      // On any failure we fall back to the client-side redirect (current behaviour).
-      try {
-        const ac = new AbortController();
-        const timer = setTimeout(() => ac.abort(), 6000);
-        const r = await fetch(xccCallbackUrl, {
-          method: "GET",
-          redirect: "manual",
-          signal: ac.signal,
-        });
-        clearTimeout(timer);
-        let body = "";
-        try {
-          body = (await r.text()).slice(0, 400);
-        } catch { /* ignore body read errors */ }
-        ecpProbe = { status: r.status, location: r.headers.get("location"), body };
-        if (r.status >= 300 && r.status < 400) {
-          ecpAuthorized = true;
-        }
-      } catch (err) {
-        const cause =
-          err instanceof Error && err.cause
-            ? String(err.cause)
-            : undefined;
-        ecpProbe = {
-          status: 0,
-          location: null,
-          body: "",
-          error: `${err instanceof Error ? err.message : String(err)}${cause ? ` | cause: ${cause}` : ""}`,
-        };
-      }
     }
   }
 
-  // When the server-side ECP probe authorized the client, send them to the success page.
-  // Otherwise fall through to the client-side ECP redirect or session fallbacks.
+  // Send the client to the XCC ECP callback URL (client-side redirect).
+  // The client browser hits apcp.ezcloudx.com/ext_approval.php with the signed URL;
+  // XCC validates, authorizes the MAC, and redirects to the success URL.
+  // Fall back to session redirectUrl / successUrl / internal success page if no ECP data.
   const candidateUrl =
     xccCallbackUrl ?? session.redirectUrl ?? session.successUrl ?? null;
 
-  let safeUrl: string;
-  let wasBlocked: boolean;
-  if (ecpAuthorized) {
-    safeUrl = internalFallback;
-    wasBlocked = false;
-  } else {
-    safeUrl = getSafeRedirectUrl(candidateUrl, internalFallback);
-    wasBlocked =
-      candidateUrl !== null &&
-      safeUrl === internalFallback &&
-      candidateUrl !== internalFallback;
-  }
+  const safeUrl = getSafeRedirectUrl(candidateUrl, internalFallback);
+  const wasBlocked =
+    candidateUrl !== null &&
+    safeUrl === internalFallback &&
+    candidateUrl !== internalFallback;
 
   try {
     await prisma.guestSession.update({
@@ -177,8 +130,6 @@ export async function POST(request: NextRequest) {
           candidateUrl,
           safeUrl,
           wasBlocked,
-          ecpAuthorized,
-          ecpProbe,
         },
       },
     });
