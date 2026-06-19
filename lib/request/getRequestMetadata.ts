@@ -1,3 +1,8 @@
+// Headers that may contain credentials or session tokens — excluded from rawHeaders
+// to avoid storing them in the audit DB. We still read them above for IP/UA extraction.
+const SENSITIVE_HEADER_RE =
+  /^(authorization|proxy-authorization|cookie|set-cookie|x-api-key|cf-access-jwt-assertion|x-amz-security-token)$/i;
+
 export interface RequestMetadata {
   sourceIp: string | null;
   userAgent: string | null;
@@ -12,7 +17,9 @@ export function getRequestMetadata(
 ): RequestMetadata {
   const rawHeaders: Record<string, string> = {};
   headers.forEach((value, key) => {
-    rawHeaders[key] = value;
+    if (!SENSITIVE_HEADER_RE.test(key)) {
+      rawHeaders[key] = value;
+    }
   });
 
   const sourceIp =

@@ -22,8 +22,13 @@ export function getSafeRedirectUrl(
 ): string {
   if (!inputUrl) return fallbackUrl;
 
-  // Allow relative paths
-  if (inputUrl.startsWith("/")) return inputUrl;
+  // Allow relative paths — but reject protocol-relative URLs (//host) which
+  // browsers treat as absolute. Both / and \ variants must be blocked.
+  if (inputUrl.startsWith("/")) {
+    const second = inputUrl[1];
+    if (second === "/" || second === "\\") return fallbackUrl;
+    return inputUrl;
+  }
 
   const lower = inputUrl.toLowerCase();
   if (UNSAFE_SCHEMES.some((scheme) => lower.startsWith(scheme))) {
