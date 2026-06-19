@@ -1,0 +1,58 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum SessionStatus {
+  STARTED
+  ACCEPTED
+  REDIRECTED
+  BLOCKED_REDIRECT
+  ERROR
+  EXPIRED
+}
+
+model GuestSession {
+  id                  String        @id @default(cuid())
+  status              SessionStatus @default(STARTED)
+  clientMac           String?
+  apMac               String?
+  ssid                String?
+  wlan                String?
+  vlan                String?
+  site                String?
+  controller          String?
+  nasId               String?
+  sessionToken        String?
+  controllerSessionId String?
+  userIp              String?
+  sourceIp            String?
+  userAgent           String?
+  redirectUrl         String?
+  successUrl          String?
+  rawQuery            Json?
+  rawHeaders          Json?
+  acceptedTerms       Boolean       @default(false)
+  acceptedAt          DateTime?
+  expiresAt           DateTime?
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+  auditEvents         AuditEvent[]
+
+  @@index([createdAt])
+  @@index([clientMac])
+  @@index([ssid])
+  @@index([status])
+}
+
+model AuditEvent {
+  id        String        @id @default(cuid())
+  sessionId String?
+  session   GuestSession? @relation(fields: [sessionId], references: [id])
+  action    String
+  details   Json?
+  createdAt DateTime      @default(now())
+}
