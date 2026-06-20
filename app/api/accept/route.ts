@@ -5,7 +5,10 @@ import { getSafeRedirectUrl } from "@/lib/captive/safeRedirect";
 import { buildSignedEcpCallbackUrl } from "@/lib/captive/signEcpCallback";
 
 export async function POST(request: NextRequest) {
-  const appBaseUrl = process.env.APP_BASE_URL ?? "";
+  // Derive base URL from request if APP_BASE_URL is not set — ensures redirects
+  // are always absolute (NextResponse.redirect rejects relative URLs).
+  const origin = new URL(request.url).origin;
+  const appBaseUrl = process.env.APP_BASE_URL ?? origin;
   const contentType = request.headers.get("content-type") ?? "";
   const isForm = contentType.includes("application/x-www-form-urlencoded") ||
                  contentType.includes("multipart/form-data");
