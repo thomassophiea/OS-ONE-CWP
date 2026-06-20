@@ -38,7 +38,11 @@ export function buildSignedEcpCallbackUrl(p: EcpCallbackParams): string {
     .replace(/\.\d{3}Z$/, "Z");
   const dateShort = amzDate.slice(0, 8); // YYYYMMDD
 
-  const portSuffix = p.hwcPort && p.hwcPort !== "443" ? `:${p.hwcPort}` : "";
+  // Determine protocol from port. Port 80 (or explicit "http") → HTTP; everything else → HTTPS.
+  const useHttp = p.hwcPort === "80";
+  const defaultPort = useHttp ? "80" : "443";
+  const portSuffix =
+    p.hwcPort && p.hwcPort !== defaultPort ? `:${p.hwcPort}` : "";
   const host = `${p.hwcIp}${portSuffix}`;
   const credential = `${p.identity}/${dateShort}/world/ecp/aws4_request`;
 
@@ -88,5 +92,6 @@ export function buildSignedEcpCallbackUrl(p: EcpCallbackParams): string {
   const kSigning = hmacSha256(kService, "aws4_request");
   const signature = hmacSha256(kSigning, stringToSign).toString("hex");
 
-  return `https://${host}/ext_approval.php?${canonicalQS}&X-Amz-Signature=${signature}`;
+  const scheme = useHttp ? "http" : "https";
+  return `${scheme}://${host}/ext_approval.php?${canonicalQS}&X-Amz-Signature=${signature}`;
 }

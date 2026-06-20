@@ -3,7 +3,6 @@ import { isIP } from "net";
 import { prisma } from "@/lib/prisma";
 import { getSafeRedirectUrl } from "@/lib/captive/safeRedirect";
 import { buildSignedEcpCallbackUrl } from "@/lib/captive/signEcpCallback";
-import { callEcpCallback } from "@/lib/captive/callEcpCallback";
 
 export async function POST(request: NextRequest) {
   const appBaseUrl = process.env.APP_BASE_URL ?? "";
@@ -103,27 +102,25 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Make ECP auth call server-side so the captive browser never needs to
-  // visit ext_approval.php directly (avoids cert errors on self-signed certs
-  // and XHR restrictions in captive portal mini-browsers).
-  let ecpOk = false;
-  if (!session.acceptedTerms && xccCallbackUrl) {
-    const ecpResult = await callEcpCallback(xccCallbackUrl);
-    ecpOk = ecpResult.ok;
-    console.log("[ECP] callback", ecpOk ? "OK" : "FAILED", "status:", ecpResult.status);
-  }
-
-  // After ECP auth, redirect browser to original destination or success page.
-  // We do NOT send the browser to ext_approval.php — auth is already done above.
+  // Redirect the captive browser to the XCC's ext_approval.php directly.
+  // The browser is on the local network and can reach the XCC; we cannot
+  // (Railway is on the public internet, XCC is at a private IP, and
+  // apcp.ezcloudx.com is not a working cloud relay for this controller).
+  // When cpHttp=true the XCC sends hwc_port=80 and we build an http:// URL,
+  // so the browser can complete the ECP handshake without cert errors.
   const destUrl = session.redirectUrl ?? session.successUrl ?? null;
-  const safeUrl = getSafeRedirectUrl(destUrl, internalFallback);
+  const safeDestUrl = getSafeRedirectUrl(destUrl, internalFallback);
+
+  // The ECP callback URL goes to the XCC (private IP, possibly HTTP).
+  // Use it as the redirect target if we have one; otherwise fall back to the
+  // safe destination URL.
+  const redirectTarget = xccCallbackUrl ?? safeDestUrl;
 
   const wasBlocked =
     destUrl !== null &&
-    safeUrl === internalFallback &&
+    safeDestUrl === internalFallback &&
     destUrl !== internalFallback;
 
-  // For already-accepted sessions, redirect idempotently.
   if (!session.acceptedTerms) {
     try {
       await prisma.guestSession.update({
@@ -141,9 +138,8 @@ export async function POST(request: NextRequest) {
           action: wasBlocked ? "TERMS_ACCEPTED_REDIRECT_BLOCKED" : "TERMS_ACCEPTED",
           details: {
             xccCallbackUrl,
-            ecpOk,
+            redirectTarget,
             destUrl,
-            safeUrl,
             wasBlocked,
           },
         },
@@ -155,6 +151,6 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  if (isForm) return NextResponse.redirect(safeUrl, 303);
-  return NextResponse.json({ redirectUrl: safeUrl });
+  if (isForm) return NextResponse.redirect(redirectTarget, 303);
+  return NextResponse.json({ redirectUrl: redirectTarget });
 }
