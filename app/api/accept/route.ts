@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isIP } from "net";
 import { prisma } from "@/lib/prisma";
 import { getSafeRedirectUrl } from "@/lib/captive/safeRedirect";
 import { buildSignedEcpCallbackUrl } from "@/lib/captive/signEcpCallback";
+import { callEcpCallback } from "@/lib/captive/callEcpCallback";
 
 export async function POST(request: NextRequest) {
   const appBaseUrl = process.env.APP_BASE_URL ?? "";
@@ -50,9 +52,6 @@ export async function POST(request: NextRequest) {
     process.env.DEFAULT_SUCCESS_URL ??
     `${appBaseUrl}/success?session=${sessionId}`;
 
-  // Build XCC ECP callback URL signed with AWS SigV4.
-  // hwcIp comes from user-controlled query params stored at session creation;
-  // validated against ALLOWED_REDIRECT_DOMAINS before use.
   const allowedDomains = (process.env.ALLOWED_REDIRECT_DOMAINS ?? "")
     .split(",")
     .map((d) => d.trim().toLowerCase())
@@ -61,6 +60,8 @@ export async function POST(request: NextRequest) {
   const xccIdentity = process.env.XCC_IDENTITY;
   const xccSharedSecret = process.env.XCC_SHARED_SECRET;
 
+  // Build ECP callback URL. For private IPs, XCC_ALLOW_INSECURE_CALLBACK=true
+  // must be set to bypass TLS verification (local testing only).
   let xccCallbackUrl: string | null = null;
 
   if (
@@ -68,14 +69,26 @@ export async function POST(request: NextRequest) {
     session.sessionToken &&
     session.wlan &&
     xccIdentity &&
-    xccSharedSecret &&
-    allowedDomains.length > 0
+    xccSharedSecret
   ) {
     const hwcHostLower = session.hwcIp.toLowerCase();
-    const hostAllowed = allowedDomains.some(
-      (d) => hwcHostLower === d || hwcHostLower.endsWith(`.${d}`)
-    );
+    // isPrivateLiteralIp requires net.isIP() > 0 first — prevents hostname strings
+    // that look like private IPs (e.g. "192.168.1.evil.com") from bypassing the allowlist.
+    const isPrivateLiteralIp =
+      isIP(session.hwcIp) !== 0 &&
+      (/^192\.168\./.test(hwcHostLower) ||
+        /^10\./.test(hwcHostLower) ||
+        /^172\.(1[6-9]|2\d|3[01])\./.test(hwcHostLower));
+    const allowInsecure =
+      process.env.XCC_ALLOW_INSECURE_CALLBACK === "true";
+    const hostAllowed =
+      (allowedDomains.length > 0 &&
+        allowedDomains.some(
+          (d) => hwcHostLower === d || hwcHostLower.endsWith(`.${d}`)
+        )) ||
+      (isPrivateLiteralIp && allowInsecure);
     const portValid = !session.hwcPort || /^\d{1,5}$/.test(session.hwcPort);
+
     if (hostAllowed && portValid) {
       xccCallbackUrl = buildSignedEcpCallbackUrl({
         hwcIp: session.hwcIp,
@@ -90,17 +103,27 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Prefer XCC ECP callback, then XCC-supplied redirect_url, then success page.
-  const candidateUrl =
-    xccCallbackUrl ?? session.redirectUrl ?? session.successUrl ?? null;
+  // Make ECP auth call server-side so the captive browser never needs to
+  // visit ext_approval.php directly (avoids cert errors on self-signed certs
+  // and XHR restrictions in captive portal mini-browsers).
+  let ecpOk = false;
+  if (!session.acceptedTerms && xccCallbackUrl) {
+    const ecpResult = await callEcpCallback(xccCallbackUrl);
+    ecpOk = ecpResult.ok;
+    console.log("[ECP] callback", ecpOk ? "OK" : "FAILED", "status:", ecpResult.status);
+  }
 
-  const safeUrl = getSafeRedirectUrl(candidateUrl, internalFallback);
+  // After ECP auth, redirect browser to original destination or success page.
+  // We do NOT send the browser to ext_approval.php — auth is already done above.
+  const destUrl = session.redirectUrl ?? session.successUrl ?? null;
+  const safeUrl = getSafeRedirectUrl(destUrl, internalFallback);
+
   const wasBlocked =
-    candidateUrl !== null &&
+    destUrl !== null &&
     safeUrl === internalFallback &&
-    candidateUrl !== internalFallback;
+    destUrl !== internalFallback;
 
-  // For already-accepted sessions, send them to the same destination (idempotent).
+  // For already-accepted sessions, redirect idempotently.
   if (!session.acceptedTerms) {
     try {
       await prisma.guestSession.update({
@@ -116,7 +139,13 @@ export async function POST(request: NextRequest) {
         data: {
           sessionId,
           action: wasBlocked ? "TERMS_ACCEPTED_REDIRECT_BLOCKED" : "TERMS_ACCEPTED",
-          details: { candidateUrl, safeUrl, wasBlocked },
+          details: {
+            xccCallbackUrl,
+            ecpOk,
+            destUrl,
+            safeUrl,
+            wasBlocked,
+          },
         },
       });
     } catch (err) {
