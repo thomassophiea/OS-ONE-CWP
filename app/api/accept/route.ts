@@ -60,7 +60,8 @@ export async function POST(request: NextRequest) {
   const xccSharedSecret = process.env.XCC_SHARED_SECRET;
 
   // Build ECP callback URL. For private IPs, XCC_ALLOW_INSECURE_CALLBACK=true
-  // must be set to bypass TLS verification (local testing only).
+  // must be set — the captive browser (on-LAN) calls the XCC directly via HTTP,
+  // so no TLS cert is needed and we force http:// regardless of hwc_port.
   let xccCallbackUrl: string | null = null;
 
   if (
@@ -98,6 +99,9 @@ export async function POST(request: NextRequest) {
         dest: session.dest,
         identity: xccIdentity,
         sharedSecret: xccSharedSecret,
+        // Force http:// for private IPs — captive browser is on-LAN and can
+        // reach the XCC directly; no TLS cert needed, no cert errors possible.
+        forceHttp: isPrivateLiteralIp && allowInsecure,
       });
     }
   }

@@ -26,6 +26,9 @@ export interface EcpCallbackParams {
   identity: string;
   sharedSecret: string;
   expiresSeconds?: number;
+  /** Force http:// regardless of port — used when hwcIp is a private IP and
+   *  XCC_ALLOW_INSECURE_CALLBACK is true (captive browser is on-LAN, no TLS needed). */
+  forceHttp?: boolean;
 }
 
 export function buildSignedEcpCallbackUrl(p: EcpCallbackParams): string {
@@ -38,8 +41,9 @@ export function buildSignedEcpCallbackUrl(p: EcpCallbackParams): string {
     .replace(/\.\d{3}Z$/, "Z");
   const dateShort = amzDate.slice(0, 8); // YYYYMMDD
 
-  // Determine protocol from port. Port 80 (or explicit "http") → HTTP; everything else → HTTPS.
-  const useHttp = p.hwcPort === "80";
+  // forceHttp overrides port-based detection — used when redirecting a captive
+  // browser (on-LAN) to the XCC's private IP so no TLS cert is needed.
+  const useHttp = p.forceHttp === true || p.hwcPort === "80";
   const defaultPort = useHttp ? "80" : "443";
   const portSuffix =
     p.hwcPort && p.hwcPort !== defaultPort ? `:${p.hwcPort}` : "";
