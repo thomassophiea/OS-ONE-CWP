@@ -61,10 +61,11 @@ export async function POST(request: NextRequest) {
 
   const xccIdentity = process.env.XCC_IDENTITY;
   const xccSharedSecret = process.env.XCC_SHARED_SECRET;
+  // XCC_CONTROLLER_IP overrides hwc_ip from the session. Use this when the XCC
+  // sends hwc_ip=apcp.ezcloudx.com (cloud relay) but the relay doesn't work —
+  // the captive browser is on-LAN and can reach the controller's real IP directly.
+  const xccControllerIp = process.env.XCC_CONTROLLER_IP ?? null;
 
-  // Build ECP callback URL. For private IPs, XCC_ALLOW_INSECURE_CALLBACK=true
-  // must be set — the captive browser (on-LAN) calls the XCC directly via HTTP,
-  // so no TLS cert is needed and we force http:// regardless of hwc_port.
   let xccCallbackUrl: string | null = null;
 
   if (
@@ -74,36 +75,39 @@ export async function POST(request: NextRequest) {
     xccIdentity &&
     xccSharedSecret
   ) {
-    const hwcHostLower = session.hwcIp.toLowerCase();
-    // isPrivateLiteralIp requires net.isIP() > 0 first — prevents hostname strings
-    // that look like private IPs (e.g. "192.168.1.evil.com") from bypassing the allowlist.
+    // If XCC_CONTROLLER_IP is set, use it directly — bypasses the broken cloud
+    // relay (apcp.ezcloudx.com → 1.1.1.1). Captive browser reaches XCC on LAN.
+    const effectiveHwcIp = xccControllerIp ?? session.hwcIp;
+    const effectiveHwcPort = xccControllerIp ? "80" : session.hwcPort;
+
+    const hwcHostLower = effectiveHwcIp.toLowerCase();
     const isPrivateLiteralIp =
-      isIP(session.hwcIp) !== 0 &&
+      isIP(effectiveHwcIp) !== 0 &&
       (/^192\.168\./.test(hwcHostLower) ||
         /^10\./.test(hwcHostLower) ||
         /^172\.(1[6-9]|2\d|3[01])\./.test(hwcHostLower));
     const allowInsecure =
       process.env.XCC_ALLOW_INSECURE_CALLBACK === "true";
     const hostAllowed =
-      (allowedDomains.length > 0 &&
+      (xccControllerIp !== null && isPrivateLiteralIp && allowInsecure) ||
+      (!xccControllerIp &&
+        allowedDomains.length > 0 &&
         allowedDomains.some(
           (d) => hwcHostLower === d || hwcHostLower.endsWith(`.${d}`)
         )) ||
-      (isPrivateLiteralIp && allowInsecure);
-    const portValid = !session.hwcPort || /^\d{1,5}$/.test(session.hwcPort);
+      (!xccControllerIp && isPrivateLiteralIp && allowInsecure);
+    const portValid = !effectiveHwcPort || /^\d{1,5}$/.test(effectiveHwcPort);
 
     if (hostAllowed && portValid) {
       xccCallbackUrl = buildSignedEcpCallbackUrl({
-        hwcIp: session.hwcIp,
-        hwcPort: session.hwcPort,
+        hwcIp: effectiveHwcIp,
+        hwcPort: effectiveHwcPort,
         token: session.sessionToken,
         wlan: session.wlan,
         clientMac: session.clientMac ?? "guest",
         dest: session.dest,
         identity: xccIdentity,
         sharedSecret: xccSharedSecret,
-        // Force http:// for private IPs — captive browser is on-LAN and can
-        // reach the XCC directly; no TLS cert needed, no cert errors possible.
         forceHttp: isPrivateLiteralIp && allowInsecure,
       });
     }
