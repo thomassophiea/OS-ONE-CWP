@@ -45,3 +45,6 @@ next-env.d.ts
 .remember/
 
 /app/generated/prisma
+
+# stuck build dirs on this volume
+.next.broken-*
