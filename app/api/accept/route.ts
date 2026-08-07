@@ -123,24 +123,16 @@ export async function POST(request: NextRequest) {
     return fail(base, "csrf");
   }
 
-  // Refuse acceptance from an operating-system captive assistant. It will tick
-  // the box, satisfy the interaction proof and beat any dwell threshold, so the
-  // only way to keep consent meaningful is to require a real browser.
-  if (
+  // Whether an operating-system captive assistant is driving this, rather than a
+  // person. It is *not* refused — the one-tap flow inside the assistant window
+  // is the experience we want — but it is recorded, because it is the difference
+  // between a guest accepting the terms and their laptop accepting for them.
+  const viaOsAssistant =
     isConnectivityProbe(session.originalDest) ||
-    looksLikeCaptiveAssistant(request.headers.get("user-agent"))
-  ) {
-    await audit(session.id, "ACCEPT_FROM_OS_ASSISTANT", "warn", {
-      clientMac: session.clientMac,
-      originalDest: session.originalDest,
-      userAgent: request.headers.get("user-agent"),
-    });
-    return fail(base, "open_browser");
-  }
+    looksLikeCaptiveAssistant(request.headers.get("user-agent"));
 
-  // Consent must be deliberate. macOS's Captive Network Assistant was observed
-  // completing a single-button form unattended, which would have let a guest's
-  // operating system agree to the terms on their behalf.
+  // Consent must still be deliberate for anything that is not a real browser
+  // driving the page: a bare form POST cannot satisfy these.
   if (!agreed) {
     await audit(session.id, "ACCEPT_NOT_AGREED", "warn", {
       clientMac: session.clientMac,
@@ -262,6 +254,7 @@ export async function POST(request: NextRequest) {
     // The URL carries a signature; record only its non-secret shape.
     approvalScheme: session.gatewayPort === "80" ? "http" : "https",
     destForwarded: Boolean(session.sanitizedDest),
+    viaOsAssistant,
     durationMs: Date.now() - startedAt,
   });
 
