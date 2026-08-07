@@ -79,6 +79,29 @@ export function awsEncode(value: string): string {
   );
 }
 
+/**
+ * The controller encodes its query string with JavaScript `encodeURIComponent`
+ * semantics, which leave `! ' ( ) *` literal. Next.js normalises the incoming
+ * URL before `request.url` is read and percent-encodes those same characters,
+ * so the bytes we receive are not always the bytes that were signed.
+ *
+ * Rather than guess, verification tries the query string as received and this
+ * de-escaped variant. The transformation is deliberately narrow — it operates
+ * on the raw string and never round-trips through a query parser, so a literal
+ * `+` inside a token is not silently turned into a space.
+ */
+function deEscapeSubDelims(rawQuery: string): string {
+  return rawQuery.replace(/%(21|27|28|29|2[Aa])/g, (_m, hex: string) =>
+    String.fromCharCode(parseInt(hex, 16))
+  );
+}
+
+/** Distinct candidate encodings of a canonical query string, in priority order. */
+export function canonicalQueryCandidates(rawQuery: string): string[] {
+  const relaxed = deEscapeSubDelims(rawQuery);
+  return relaxed === rawQuery ? [rawQuery] : [rawQuery, relaxed];
+}
+
 /** `20260807T004135Z` -> Date, or null when malformed. */
 export function parseAmzDate(amzDate: string): Date | null {
   const m = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/.exec(amzDate);
@@ -205,25 +228,30 @@ export function verifyEcpRedirect(opts: VerifyOptions): VerifyResult {
     return { valid: false, reason: "NOT_YET_VALID", signature, signedAt, expiresAt };
   }
 
-  const creq = canonicalRequest("GET", expectedPath, kept.join("&"), expectedHost);
-  const expected = hmac(
-    signingKey(sharedSecret, dateStamp),
-    stringToSign(amzDate, dateStamp, creq)
-  ).toString("hex");
+  const key = signingKey(sharedSecret, dateStamp);
+  const provided = Buffer.from(signature.toLowerCase(), "utf8");
 
-  const a = Buffer.from(expected, "utf8");
-  const b = Buffer.from(signature.toLowerCase(), "utf8");
-  if (a.length !== b.length || !timingSafeEqual(a, b)) {
-    return {
-      valid: false,
-      reason: "SIGNATURE_MISMATCH",
-      signature,
-      signedAt,
-      expiresAt,
-    };
+  for (const candidate of canonicalQueryCandidates(kept.join("&"))) {
+    const creq = canonicalRequest("GET", expectedPath, candidate, expectedHost);
+    const expected = Buffer.from(
+      hmac(key, stringToSign(amzDate, dateStamp, creq)).toString("hex"),
+      "utf8"
+    );
+    if (
+      expected.length === provided.length &&
+      timingSafeEqual(expected, provided)
+    ) {
+      return { valid: true, signature, signedAt, expiresAt };
+    }
   }
 
-  return { valid: true, signature, signedAt, expiresAt };
+  return {
+    valid: false,
+    reason: "SIGNATURE_MISMATCH",
+    signature,
+    signedAt,
+    expiresAt,
+  };
 }
 
 export interface ApprovalUrlParams {

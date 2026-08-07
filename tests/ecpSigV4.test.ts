@@ -69,6 +69,23 @@ describe("verifyEcpRedirect", () => {
     expect(verifyEcpRedirect({ ...baseOpts, rawUrl: LIVE_REDIRECT }).valid).toBe(true);
   });
 
+  it("accepts the same redirect after Next.js re-encodes the sub-delimiters", () => {
+    // Next normalises `request.url` and percent-encodes `!` (and `' ( ) *`),
+    // so the bytes the handler sees are not the bytes the controller signed.
+    const normalised = LIVE_REDIRECT.replace(
+      "token=gUM7bD7k0bWu4IvfH0Pq4w!!",
+      "token=gUM7bD7k0bWu4IvfH0Pq4w%21%21"
+    );
+    expect(normalised).not.toBe(LIVE_REDIRECT);
+    expect(verifyEcpRedirect({ ...baseOpts, rawUrl: normalised }).valid).toBe(true);
+  });
+
+  it("only relaxes the sub-delimiters, not arbitrary escapes", () => {
+    // %2F must stay encoded: decoding it would change the signed value.
+    const meddled = LIVE_REDIRECT.replace("dest=example.com%2F", "dest=example.com/");
+    expect(verifyEcpRedirect({ ...baseOpts, rawUrl: meddled }).valid).toBe(false);
+  });
+
   it("rejects a tampered MAC", () => {
     const tampered = LIVE_REDIRECT.replace("mac=66dffd68ba25", "mac=aabbccddeeff");
     expect(verifyEcpRedirect({ ...baseOpts, rawUrl: tampered })).toMatchObject({
