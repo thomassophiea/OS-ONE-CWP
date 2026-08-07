@@ -69,21 +69,32 @@ describe("verifyEcpRedirect", () => {
     expect(verifyEcpRedirect({ ...baseOpts, rawUrl: LIVE_REDIRECT }).valid).toBe(true);
   });
 
-  it("accepts the same redirect after Next.js re-encodes the sub-delimiters", () => {
-    // Next normalises `request.url` and percent-encodes `!` (and `' ( ) *`),
-    // so the bytes the handler sees are not the bytes the controller signed.
-    const normalised = LIVE_REDIRECT.replace(
-      "token=gUM7bD7k0bWu4IvfH0Pq4w!!",
-      "token=gUM7bD7k0bWu4IvfH0Pq4w%21%21"
-    );
-    expect(normalised).not.toBe(LIVE_REDIRECT);
-    expect(verifyEcpRedirect({ ...baseOpts, rawUrl: normalised }).valid).toBe(true);
+  it("accepts the redirect after Next.js re-serialises the query", () => {
+    // Next hands the handler a form-encoded rewrite of the query: spaces come
+    // back as `+` and `!` as `%21`. Verification has to reconstruct the
+    // controller's encodeURIComponent form from that.
+    const asNextSeesIt = LIVE_REDIRECT.replace(
+      "role=Unregistered%20role%20for%20AURA-CWP",
+      "role=Unregistered+role+for+AURA-CWP"
+    ).replace("token=gUM7bD7k0bWu4IvfH0Pq4w!!", "token=gUM7bD7k0bWu4IvfH0Pq4w%21%21");
+    expect(asNextSeesIt).not.toBe(LIVE_REDIRECT);
+    expect(verifyEcpRedirect({ ...baseOpts, rawUrl: asNextSeesIt }).valid).toBe(true);
   });
 
-  it("only relaxes the sub-delimiters, not arbitrary escapes", () => {
-    // %2F must stay encoded: decoding it would change the signed value.
-    const meddled = LIVE_REDIRECT.replace("dest=example.com%2F", "dest=example.com/");
-    expect(verifyEcpRedirect({ ...baseOpts, rawUrl: meddled }).valid).toBe(false);
+  it("keeps a literal plus distinct from a space", () => {
+    // Form encoding writes a real `+` as %2B, so the reconstruction must not
+    // collapse the two. A token differing only in that must still fail.
+    const plusToken = LIVE_REDIRECT.replace(
+      "token=gUM7bD7k0bWu4IvfH0Pq4w!!",
+      "token=gUM7bD7k0bWu4IvfH0Pq4w%2B%2B"
+    );
+    expect(verifyEcpRedirect({ ...baseOpts, rawUrl: plusToken }).valid).toBe(false);
+  });
+
+  it("survives a query it cannot percent-decode", () => {
+    const broken = LIVE_REDIRECT.replace("dest=example.com%2F", "dest=example.com%zz");
+    expect(() => verifyEcpRedirect({ ...baseOpts, rawUrl: broken })).not.toThrow();
+    expect(verifyEcpRedirect({ ...baseOpts, rawUrl: broken }).valid).toBe(false);
   });
 
   it("rejects a tampered MAC", () => {

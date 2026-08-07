@@ -80,26 +80,48 @@ export function awsEncode(value: string): string {
 }
 
 /**
- * The controller encodes its query string with JavaScript `encodeURIComponent`
- * semantics, which leave `! ' ( ) *` literal. Next.js normalises the incoming
- * URL before `request.url` is read and percent-encodes those same characters,
- * so the bytes we receive are not always the bytes that were signed.
+ * The controller builds its query string with JavaScript `encodeURIComponent`
+ * semantics: spaces become `%20` and `! ' ( ) * - . _ ~` are left literal.
  *
- * Rather than guess, verification tries the query string as received and this
- * de-escaped variant. The transformation is deliberately narrow — it operates
- * on the raw string and never round-trips through a query parser, so a literal
- * `+` inside a token is not silently turned into a space.
+ * Next.js re-serialises the query before `request.url` becomes readable, using
+ * `application/x-www-form-urlencoded` rules instead — spaces come back as `+`
+ * and `!` as `%21`. Measured against the deployed service: a request signed
+ * over `role=Unregistered+role+for+AURA-CWP&…&token=…!!` verified, while the
+ * form the controller actually transmitted did not.
+ *
+ * This rebuilds the controller's encoding from whatever we received. The
+ * conversion is lossless in this direction: form-encoding always writes a
+ * literal `+` in a value as `%2B`, so a bare `+` unambiguously means a space.
  */
-function deEscapeSubDelims(rawQuery: string): string {
-  return rawQuery.replace(/%(21|27|28|29|2[Aa])/g, (_m, hex: string) =>
-    String.fromCharCode(parseInt(hex, 16))
-  );
+function reencodeAsComponent(rawQuery: string): string {
+  const decode = (part: string) => decodeURIComponent(part.replace(/\+/g, " "));
+  return rawQuery
+    .split("&")
+    .map((pair) => {
+      const eq = pair.indexOf("=");
+      if (eq === -1) return encodeURIComponent(decode(pair));
+      return `${encodeURIComponent(decode(pair.slice(0, eq)))}=${encodeURIComponent(
+        decode(pair.slice(eq + 1))
+      )}`;
+    })
+    .join("&");
 }
 
-/** Distinct candidate encodings of a canonical query string, in priority order. */
+/**
+ * Candidate encodings of the canonical query string, in priority order: the
+ * bytes as received first, then the controller's own encoding rebuilt from
+ * them. Both are checked against the same secret, so accepting either costs
+ * nothing — an attacker still needs the shared secret.
+ */
 export function canonicalQueryCandidates(rawQuery: string): string[] {
-  const relaxed = deEscapeSubDelims(rawQuery);
-  return relaxed === rawQuery ? [rawQuery] : [rawQuery, relaxed];
+  const candidates = [rawQuery];
+  try {
+    const rebuilt = reencodeAsComponent(rawQuery);
+    if (rebuilt !== rawQuery) candidates.push(rebuilt);
+  } catch {
+    // Malformed percent-escapes: the raw form is the only candidate.
+  }
+  return candidates;
 }
 
 /** `20260807T004135Z` -> Date, or null when malformed. */
