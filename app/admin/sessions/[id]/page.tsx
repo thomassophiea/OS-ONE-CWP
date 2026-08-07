@@ -1,164 +1,112 @@
-import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import type { ReactNode } from "react";
+import { prisma } from "@/lib/prisma";
+import { adminTokenIsValid } from "@/lib/admin/auth";
 
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export default async function SessionDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ k?: string }>;
 }) {
-  const { id } = await params;
+  const [{ id }, { k }] = await Promise.all([params, searchParams]);
+  if (!adminTokenIsValid(k)) notFound();
 
   const session = await prisma.guestSession.findUnique({
     where: { id },
     include: { auditEvents: { orderBy: { createdAt: "asc" } } },
   });
-
   if (!session) notFound();
 
+  const rows: [string, string | null][] = [
+    ["Status", session.status],
+    ["Client MAC", session.clientMac],
+    ["Client MAC (raw)", session.clientMacRaw],
+    ["Source IP", session.sourceIp],
+    ["SSID / VNS", [session.ssid, session.vns].filter(Boolean).join(" / ") || null],
+    ["WLAN index", session.wlan],
+    ["VLAN", session.vlan],
+    ["AP", [session.apName, session.apSerial].filter(Boolean).join(" · ") || null],
+    ["AP MAC / BSSID", [session.apMac, session.bssid].filter(Boolean).join(" / ") || null],
+    ["AP location", session.apLocation],
+    ["Gateway", session.gatewayHost ? `${session.gatewayHost}:${session.gatewayPort}` : null],
+    ["Pre-auth role", session.preAuthRole],
+    ["Original destination", session.originalDest],
+    ["Sanitized destination", session.sanitizedDest],
+    ["Destination rejected", session.destRejectionReason],
+    ["Redirect signed at", session.redirectSignedAt?.toISOString() ?? null],
+    ["Redirect expires at", session.redirectExpiresAt?.toISOString() ?? null],
+    ["Accepted at", session.acceptedAt?.toISOString() ?? null],
+    ["Authorization attempted", session.authorizationAttemptedAt?.toISOString() ?? null],
+    ["Authorized at", session.authorizedAt?.toISOString() ?? null],
+    ["Authorization result", session.authorizationResult],
+    ["Failure reason", session.failureReason],
+    ["Expires at", session.expiresAt?.toISOString() ?? null],
+    ["Disconnected at", session.disconnectedAt?.toISOString() ?? null],
+    ["Created", session.createdAt.toISOString()],
+    ["Updated", session.updatedAt.toISOString()],
+  ];
+
   return (
-    <main className="min-h-screen bg-gray-50 p-6">
+    <main className="min-h-screen bg-slate-50 p-6">
       <div className="max-w-4xl mx-auto">
-        <div className="mb-4">
-          <Link
-            href="/admin/sessions"
-            className="text-sm text-blue-600 hover:underline"
-          >
-            ← Back to sessions
-          </Link>
-        </div>
-        <h1 className="text-xl font-bold text-gray-900 mb-1">
-          Session Detail
-        </h1>
-        <p className="font-mono text-xs text-gray-500 mb-6 break-all">
+        <Link
+          href={`/admin/sessions?k=${encodeURIComponent(k ?? "")}`}
+          className="text-sm text-blue-600 hover:underline"
+        >
+          ← Back to sessions
+        </Link>
+
+        <h1 className="text-2xl font-bold text-slate-900 mt-3 mb-6 font-mono break-all">
           {session.id}
-        </p>
+        </h1>
 
-        <div className="space-y-4">
-          <Section title="Parsed Fields">
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Status" value={session.status} />
-              <Field label="Client MAC" value={session.clientMac} />
-              <Field label="AP MAC" value={session.apMac} />
-              <Field label="SSID" value={session.ssid} />
-              <Field label="WLAN" value={session.wlan} />
-              <Field label="VLAN" value={session.vlan} />
-              <Field label="Site" value={session.site} />
-              <Field label="Controller" value={session.controller} />
-              <Field label="NAS ID" value={session.nasId} />
-              <Field label="Session Token" value={session.sessionToken} />
-              <Field
-                label="Controller Session ID"
-                value={session.controllerSessionId}
-              />
-              <Field label="User IP" value={session.userIp} />
-              <Field label="Source IP" value={session.sourceIp} />
-              <Field label="Redirect URL" value={session.redirectUrl} />
-              <Field label="Success URL" value={session.successUrl} />
-              <Field
-                label="Accepted Terms"
-                value={session.acceptedTerms ? "Yes" : "No"}
-              />
-              <Field
-                label="Accepted At"
-                value={session.acceptedAt?.toISOString() ?? null}
-              />
-              <Field
-                label="Created At"
-                value={session.createdAt.toISOString()}
-              />
-              <Field
-                label="Updated At"
-                value={session.updatedAt.toISOString()}
-              />
-            </div>
-          </Section>
-
-          <Section title="User Agent">
-            <pre className="text-xs bg-gray-900 text-green-300 rounded-lg p-4 overflow-x-auto whitespace-pre-wrap break-words">
-              {session.userAgent ?? "(none)"}
-            </pre>
-          </Section>
-
-          <Section title="Raw Query Parameters">
-            <pre className="text-xs bg-gray-900 text-green-300 rounded-lg p-4 overflow-x-auto">
-              {JSON.stringify(session.rawQuery, null, 2)}
-            </pre>
-          </Section>
-
-          <Section title="Raw Headers">
-            <pre className="text-xs bg-gray-900 text-green-300 rounded-lg p-4 overflow-x-auto max-h-80">
-              {JSON.stringify(session.rawHeaders, null, 2)}
-            </pre>
-          </Section>
-
-          <Section title={`Audit Events (${session.auditEvents.length})`}>
-            {session.auditEvents.length === 0 ? (
-              <p className="text-sm text-gray-400">No audit events</p>
-            ) : (
-              <div className="space-y-2">
-                {session.auditEvents.map((e) => (
-                  <div
-                    key={e.id}
-                    className="rounded-lg bg-gray-50 border border-gray-200 p-3"
-                  >
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="font-mono text-xs font-semibold text-gray-800">
-                        {e.action}
-                      </span>
-                      <span className="text-xs text-gray-400">
-                        {e.createdAt.toISOString()}
-                      </span>
-                    </div>
-                    {e.details && (
-                      <pre className="text-xs text-gray-600 overflow-x-auto">
-                        {JSON.stringify(e.details, null, 2)}
-                      </pre>
-                    )}
-                  </div>
-                ))}
+        <section className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100 mb-8">
+          {rows
+            .filter(([, v]) => v)
+            .map(([label, value]) => (
+              <div key={label} className="flex gap-4 px-4 py-2 text-sm">
+                <span className="w-56 shrink-0 text-slate-500">{label}</span>
+                <span className="text-slate-900 break-all">{value}</span>
               </div>
-            )}
-          </Section>
-        </div>
+            ))}
+        </section>
+
+        <h2 className="text-lg font-semibold text-slate-900 mb-3">
+          Audit trail ({session.auditEvents.length})
+        </h2>
+        <ol className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100">
+          {session.auditEvents.map((e) => (
+            <li key={e.id} className="px-4 py-3 text-sm">
+              <div className="flex items-center gap-3">
+                <span className="font-mono text-xs text-slate-500">
+                  {e.createdAt.toISOString().replace("T", " ").slice(0, 19)}
+                </span>
+                <span
+                  className={`rounded px-2 py-0.5 text-xs font-medium ${
+                    e.severity === "error"
+                      ? "bg-red-100 text-red-800"
+                      : e.severity === "warn"
+                        ? "bg-amber-100 text-amber-800"
+                        : "bg-slate-100 text-slate-600"
+                  }`}
+                >
+                  {e.action}
+                </span>
+              </div>
+              {e.details ? (
+                <pre className="mt-2 overflow-x-auto rounded bg-slate-50 p-2 text-xs text-slate-700">
+                  {JSON.stringify(e.details, null, 2)}
+                </pre>
+              ) : null}
+            </li>
+          ))}
+        </ol>
       </div>
     </main>
-  );
-}
-
-function Section({
-  title,
-  children,
-}: {
-  title: string;
-  children: ReactNode;
-}) {
-  return (
-    <div className="bg-white rounded-xl shadow p-5">
-      <h2 className="text-xs font-semibold text-gray-500 mb-3 uppercase tracking-wider">
-        {title}
-      </h2>
-      {children}
-    </div>
-  );
-}
-
-function Field({
-  label,
-  value,
-}: {
-  label: string;
-  value: string | null | undefined;
-}) {
-  return (
-    <div>
-      <p className="text-xs text-gray-400">{label}</p>
-      <p className="text-sm font-mono text-gray-900 break-all">
-        {value ?? "—"}
-      </p>
-    </div>
   );
 }
