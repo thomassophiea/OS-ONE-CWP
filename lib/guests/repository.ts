@@ -52,7 +52,10 @@ export interface ListGuestsFilter {
   source?: GuestSource[];
   /** Substring match on MAC, display name or email. */
   search?: string;
-  /** Filter on last-seen; guests never seen are included only when no window is set. */
+  /**
+   * Window applied to `lastSeen`, falling back to `createdAt` for a guest that
+   * has never been seen — see `buildWhere`.
+   */
   startTime?: Date;
   endTime?: Date;
   limit?: number;
@@ -60,10 +63,64 @@ export interface ListGuestsFilter {
   cursor?: string;
 }
 
+/** The most recent portal visit for a device, if there has been one. */
+export interface LastSessionSummary {
+  id: string;
+  status: string;
+  createdAt: Date;
+  authorizedAt: Date | null;
+  failureReason: string | null;
+  clientIp: string | null;
+}
+
 export interface ListGuestsResult {
   guests: GuestAuthorization[];
+  /** Canonical MAC → most recent session. Absent for devices with no visits. */
+  lastSessions: Map<string, LastSessionSummary>;
   nextCursor: string | null;
   total: number;
+}
+
+/**
+ * Most recent portal session per MAC.
+ *
+ * Fetched for the page being returned rather than for every guest, and in one
+ * query rather than per row — the alternative is a fan-out that grows with the
+ * table.
+ */
+export async function lastSessionsFor(
+  macs: string[]
+): Promise<Map<string, LastSessionSummary>> {
+  const out = new Map<string, LastSessionSummary>();
+  if (macs.length === 0) return out;
+
+  const rows = await prisma.guestSession.findMany({
+    where: { clientMac: { in: macs } },
+    distinct: ["clientMac"],
+    orderBy: [{ clientMac: "asc" }, { createdAt: "desc" }],
+    select: {
+      id: true,
+      clientMac: true,
+      status: true,
+      createdAt: true,
+      authorizedAt: true,
+      failureReason: true,
+      clientIp: true,
+    },
+  });
+
+  for (const row of rows) {
+    if (!row.clientMac) continue;
+    out.set(row.clientMac, {
+      id: row.id,
+      status: row.status,
+      createdAt: row.createdAt,
+      authorizedAt: row.authorizedAt,
+      failureReason: row.failureReason,
+      clientIp: row.clientIp,
+    });
+  }
+  return out;
 }
 
 const DEFAULT_LIMIT = 100;
@@ -111,11 +168,17 @@ function buildWhere(filter: ListGuestsFilter, now: Date): Prisma.GuestAuthorizat
   }
 
   if (filter.startTime || filter.endTime) {
+    const window = {
+      ...(filter.startTime ? { gte: filter.startTime } : {}),
+      ...(filter.endTime ? { lte: filter.endTime } : {}),
+    };
+    // A guest that has never connected has no `lastSeen`, so filtering on that
+    // column alone hid every manually added device the moment any window was
+    // selected — and the management UI always sends one. Adding a MAC and not
+    // seeing it appear reads as the feature being broken. Such a guest falls in
+    // the window if it was *created* in it.
     and.push({
-      lastSeen: {
-        ...(filter.startTime ? { gte: filter.startTime } : {}),
-        ...(filter.endTime ? { lte: filter.endTime } : {}),
-      },
+      OR: [{ lastSeen: window }, { lastSeen: null, createdAt: window }],
     });
   }
 
@@ -145,6 +208,7 @@ export async function listGuests(
   const guests = hasMore ? rows.slice(0, limit) : rows;
   return {
     guests,
+    lastSessions: await lastSessionsFor(guests.map((g) => g.macAddress)),
     nextCursor: hasMore ? guests[guests.length - 1].id : null,
     total,
   };
