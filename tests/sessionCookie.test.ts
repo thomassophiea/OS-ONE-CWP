@@ -5,6 +5,8 @@ import {
   newCsrfToken,
   csrfTokenMatches,
   sessionCookieOptions,
+  consentChallenge,
+  consentChallengeMatches,
 } from "@/lib/session/cookie";
 import { redact } from "@/lib/log";
 
@@ -108,5 +110,30 @@ describe("log redaction", () => {
     const out = redact(new Error("boom")) as Record<string, unknown>;
     expect(out.message).toBe("boom");
     expect(out.stack).toBeUndefined();
+  });
+});
+
+describe("consent challenge", () => {
+  it("accepts the value it derives for that session", () => {
+    expect(consentChallengeMatches(consentChallenge("cksession123"), "cksession123")).toBe(
+      true
+    );
+  });
+
+  it("is session-specific", () => {
+    expect(consentChallengeMatches(consentChallenge("cksession123"), "ckother999")).toBe(
+      false
+    );
+  });
+
+  it("rejects a missing or empty value — an auto-submitted form has neither", () => {
+    expect(consentChallengeMatches(null, "cksession123")).toBe(false);
+    expect(consentChallengeMatches("", "cksession123")).toBe(false);
+  });
+
+  it("cannot be derived without the session secret", () => {
+    const issued = consentChallenge("cksession123");
+    vi.stubEnv("SESSION_SECRET", "a-different-secret-entirely");
+    expect(consentChallengeMatches(issued, "cksession123")).toBe(false);
   });
 });

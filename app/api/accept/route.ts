@@ -20,11 +20,18 @@ import {
   CSRF_COOKIE,
   readSessionCookie,
   csrfTokenMatches,
+  consentChallengeMatches,
 } from "@/lib/session/cookie";
 import { audit, isExpired } from "@/lib/session/repository";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/**
+ * Floor on how quickly consent can plausibly be given after the page renders.
+ * An auto-submitting agent fires far below this; a guest ticking a box does not.
+ */
+const MIN_CONSENT_DWELL_MS = 400;
 
 /**
  * Consent handler. Its sole job is to turn an accepted session into the
@@ -64,9 +71,15 @@ export async function POST(request: NextRequest) {
   }
 
   let submittedCsrf: string | null = null;
+  let agreed = false;
+  let interaction: string | null = null;
+  let dwellMs = 0;
   try {
     const form = await request.formData();
     submittedCsrf = form.get("csrfToken")?.toString() ?? null;
+    agreed = form.get("agree")?.toString() === "yes";
+    interaction = form.get("interaction")?.toString() ?? null;
+    dwellMs = Number(form.get("dwellMs")?.toString() ?? "0");
   } catch {
     return fail(base, "bad_request");
   }
@@ -106,6 +119,32 @@ export async function POST(request: NextRequest) {
       clientMac: session.clientMac,
     });
     return fail(base, "csrf");
+  }
+
+  // Consent must be deliberate. macOS's Captive Network Assistant was observed
+  // completing a single-button form unattended, which would have let a guest's
+  // operating system agree to the terms on their behalf.
+  if (!agreed) {
+    await audit(session.id, "ACCEPT_NOT_AGREED", "warn", {
+      clientMac: session.clientMac,
+      userAgent: request.headers.get("user-agent"),
+    });
+    return fail(base, "consent");
+  }
+  if (!consentChallengeMatches(interaction, session.id)) {
+    await audit(session.id, "ACCEPT_NO_INTERACTION", "warn", {
+      clientMac: session.clientMac,
+      userAgent: request.headers.get("user-agent"),
+    });
+    return fail(base, "consent");
+  }
+  if (!Number.isFinite(dwellMs) || dwellMs < MIN_CONSENT_DWELL_MS) {
+    await audit(session.id, "ACCEPT_TOO_FAST", "warn", {
+      clientMac: session.clientMac,
+      dwellMs,
+      userAgent: request.headers.get("user-agent"),
+    });
+    return fail(base, "consent");
   }
 
   if (isExpired(session)) {

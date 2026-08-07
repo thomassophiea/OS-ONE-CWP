@@ -2,9 +2,15 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { log } from "@/lib/log";
-import { SESSION_COOKIE, CSRF_COOKIE, readSessionCookie } from "@/lib/session/cookie";
+import {
+  SESSION_COOKIE,
+  CSRF_COOKIE,
+  readSessionCookie,
+  consentChallenge,
+} from "@/lib/session/cookie";
 import { isExpired } from "@/lib/session/repository";
 import { normalizeMac } from "@/lib/captive/extractSessionFields";
+import ConsentForm from "./ConsentForm";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -40,14 +46,16 @@ export default async function ConsentPage() {
           </p>
         </header>
 
+        {/* Only what a guest can act on. The access point name, its serial and
+            the site name are infrastructure identifiers that tell the guest
+            nothing and tell a passer-by something — they stay in the session
+            record and the admin view. */}
         <dl className="mb-6 rounded-lg bg-slate-50 border border-slate-200 divide-y divide-slate-200 text-sm">
           <Row label="Network" value={session.ssid} />
           <Row
             label="Device"
             value={session.clientMac ? normalizeMac(session.clientMac) : null}
           />
-          <Row label="Access point" value={session.apName} />
-          <Row label="Location" value={session.apLocation} />
         </dl>
 
         <div className="rounded-lg bg-slate-50 border border-slate-200 p-4 mb-6 text-sm text-slate-700 max-h-40 overflow-y-auto leading-relaxed">
@@ -64,15 +72,10 @@ export default async function ConsentPage() {
           </p>
         )}
 
-        <form method="POST" action="/api/accept">
-          <input type="hidden" name="csrfToken" value={csrfToken} />
-          <button
-            type="submit"
-            className="w-full rounded-xl bg-blue-600 py-3 text-white font-semibold text-sm hover:bg-blue-700 transition-colors"
-          >
-            I Accept — Connect to the Internet
-          </button>
-        </form>
+        <ConsentForm
+          csrfToken={csrfToken}
+          challenge={consentChallenge(session.id)}
+        />
 
         <p className="mt-6 text-center text-xs text-slate-400">OS-ONE-CWP</p>
       </div>

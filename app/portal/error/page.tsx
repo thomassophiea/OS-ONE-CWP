@@ -26,6 +26,10 @@ const MESSAGES: Record<string, { title: string; body: string }> = {
     title: "Network not supported",
     body: "This portal is not configured for the network you are connecting from. Please contact the network administrator.",
   },
+  consent: {
+    title: "You need to accept the terms",
+    body: "Tick the agreement box on the sign-in page and press Connect. If your device opened this page automatically, open a browser and try again.",
+  },
   csrf: {
     title: "Your session could not be confirmed",
     body: "For your security we could not confirm this form submission. Reconnect to the Wi-Fi network and try again.",

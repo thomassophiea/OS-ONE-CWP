@@ -47,6 +47,31 @@ export function sessionCookieOptions(maxAgeSeconds: number) {
   };
 }
 
+/**
+ * Per-session value the consent form must echo back to prove the browser ran
+ * our script in response to a real user gesture.
+ *
+ * Deterministic from the session id, so it needs no extra storage. It is not a
+ * secret and not a substitute for the CSRF token — it exists solely so that a
+ * client which POSTs the form without executing the page cannot consent.
+ */
+export function consentChallenge(sessionId: string): string {
+  return createHmac("sha256", sessionSecret())
+    .update(`${sessionId}|consent`, "utf8")
+    .digest("base64url")
+    .slice(0, 32);
+}
+
+export function consentChallengeMatches(
+  provided: string | null | undefined,
+  sessionId: string
+): boolean {
+  if (!provided) return false;
+  const a = Buffer.from(provided, "utf8");
+  const b = Buffer.from(consentChallenge(sessionId), "utf8");
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
 /** Fresh CSRF token; only its SHA-256 is persisted. */
 export function newCsrfToken(): { token: string; hash: string } {
   const token = randomBytes(32).toString("base64url");
