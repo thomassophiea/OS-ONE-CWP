@@ -7,7 +7,7 @@
  */
 
 import type { GuestAuthorization } from "@prisma/client";
-import { effectiveStatus } from "@/lib/guests/repository";
+import { effectiveStatus, type LastSessionSummary } from "@/lib/guests/repository";
 
 export interface GuestDto {
   id: string;
@@ -35,13 +35,23 @@ export interface GuestDto {
   revokedBy: string | null;
   createdBy: string | null;
   lastSessionId: string | null;
+  /** Status of the most recent portal visit — the only honest source of "failed". */
+  lastSessionStatus: string | null;
+  lastSessionAt: string | null;
+  lastSessionFailureReason: string | null;
+  /** IP the portal saw, used only when the gateway has no live answer. */
+  lastKnownIp: string | null;
   createdAt: string;
   updatedAt: string;
 }
 
 const iso = (value: Date | null) => (value ? value.toISOString() : null);
 
-export function toGuestDto(guest: GuestAuthorization, now = new Date()): GuestDto {
+export function toGuestDto(
+  guest: GuestAuthorization,
+  now = new Date(),
+  lastSession: LastSessionSummary | null = null
+): GuestDto {
   return {
     id: guest.id,
     macAddress: guest.macAddress,
@@ -65,7 +75,11 @@ export function toGuestDto(guest: GuestAuthorization, now = new Date()): GuestDt
     revokedAt: iso(guest.revokedAt),
     revokedBy: guest.revokedBy,
     createdBy: guest.createdBy,
-    lastSessionId: guest.lastSessionId,
+    lastSessionId: lastSession?.id ?? guest.lastSessionId,
+    lastSessionStatus: lastSession?.status ?? null,
+    lastSessionAt: iso(lastSession?.createdAt ?? null),
+    lastSessionFailureReason: lastSession?.failureReason ?? null,
+    lastKnownIp: lastSession?.clientIp ?? null,
     createdAt: guest.createdAt.toISOString(),
     updatedAt: guest.updatedAt.toISOString(),
   };

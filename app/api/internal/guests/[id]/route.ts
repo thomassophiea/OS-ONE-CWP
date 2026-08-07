@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { log } from "@/lib/log";
 import { authorizeInternalRequest, actorFrom } from "@/lib/guests/internalAuth";
-import { findById, deleteGuest, revokeGuest } from "@/lib/guests/repository";
+import { findById, deleteGuest, revokeGuest, lastSessionsFor } from "@/lib/guests/repository";
 import { toGuestDto } from "@/lib/guests/serialize";
 import { audit } from "@/lib/session/repository";
 
@@ -18,7 +18,10 @@ export async function GET(request: NextRequest, { params }: Params) {
   try {
     const guest = await findById(id);
     if (!guest) return NextResponse.json({ error: "Guest not found" }, { status: 404 });
-    return NextResponse.json({ guest: toGuestDto(guest) });
+    const sessions = await lastSessionsFor([guest.macAddress]);
+    return NextResponse.json({
+      guest: toGuestDto(guest, new Date(), sessions.get(guest.macAddress) ?? null),
+    });
   } catch (err) {
     log.error("internal_guests_get_failed", { err });
     return NextResponse.json({ error: "Guest store unavailable" }, { status: 503 });
