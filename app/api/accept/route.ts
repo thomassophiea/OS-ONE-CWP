@@ -83,6 +83,17 @@ export async function POST(request: NextRequest) {
     return fail(base, "no_session");
   }
 
+  // A resubmission of a session that already completed — double-click, or the
+  // browser re-posting on back-navigation. The signed session cookie already
+  // proves ownership, and the CSRF token was burnt on first use, so check this
+  // before treating the missing token as an attack.
+  if (session.status === "ACCEPTED" || session.status === "AUTHORIZED") {
+    await audit(session.id, "ACCEPT_DUPLICATE", "info", {
+      status: session.status,
+    });
+    return NextResponse.redirect(new URL("/success", base), 303);
+  }
+
   // The token must match both the server-side hash and the HttpOnly cookie,
   // so neither a stolen form field nor a stolen cookie alone is sufficient.
   const cookieCsrf = jar.get(CSRF_COOKIE)?.value ?? null;
@@ -105,15 +116,6 @@ export async function POST(request: NextRequest) {
       clientMac: session.clientMac,
     });
     return fail(base, "expired");
-  }
-
-  // Duplicate submission (double-click, back-button re-post): do not issue a
-  // second authorization, just send the guest to the success page.
-  if (session.status === "ACCEPTED" || session.status === "AUTHORIZED") {
-    await audit(session.id, "ACCEPT_DUPLICATE", "info", {
-      status: session.status,
-    });
-    return NextResponse.redirect(new URL("/success", base), 303);
   }
 
   if (
