@@ -133,3 +133,89 @@ The gateway and Railway must change together; there is no overlap window.
    `DATABASE_PUBLIC_URL` on the PostgresCWP service
 3. OS-ONE-CWP picks the new value up automatically through the
    `${{PostgresCWP.DATABASE_URL}}` reference
+
+## Rollback
+
+### Gateway — restore the previous WLAN state
+
+The pre-change configuration of every object touched was captured before any
+write. To revert, `PUT` these back:
+
+```
+/management/v3/roles/e21c4520-91f3-11f1-b355-751cfcce73ab
+   cpRedirect="" cpIdentity="" cpSharedKey="" cpAddSign=false
+   cpHttp=false  cpRedirectPorts=[80,443]  l3Filters=[]
+/management/v1/services/e21c4520-91f3-11f1-b355-751cfcce73ab
+   defaultTopology="efd5f044-26c8-11e7-93ae-92361f002671"   (Bridged at AP untagged)
+   mbaAuthorization=true  mbatimeoutRoleId=null  sessionTimeout=0
+/management/v3/profiles/6951f126-71c0-475c-b6de-f150d86d74f4
+   remove the two radioIfList entries whose serviceId is the AURA-CWP WLAN id
+```
+
+Note the topology and profile changes are coupled: reverting `defaultTopology`
+to *Bridged at AP untagged* while the WLAN is still bound to the AP5020 profile
+reproduces the VLAN-conflict error, so remove the `radioIfList` entries first.
+
+### Disable the external portal without unwinding anything
+
+Clear `cpRedirect` on the pre-auth role. Stations then stay in the
+unauthenticated role with no portal to send them to.
+
+### Disable the test WLAN entirely
+
+`PUT /management/v1/services/{wlanId}` with `status: "disabled"`. This is also
+how station sessions are flushed during testing.
+
+### Railway — restore the previous deployment
+
+Redeploy an earlier deployment from the service's Deployments tab, or:
+
+```
+mutation { deploymentRollback(id: "<previous deployment id>") }
+```
+
+The variables are versioned separately; rolling the deployment back does not
+restore deleted variables. `XCC_CONTROLLER_IP`, `XCC_ALLOW_INSECURE_CALLBACK`,
+`ALLOWED_REDIRECT_DOMAINS` and `DEFAULT_SUCCESS_URL` were removed and would need
+re-adding for a rollback past commit `dcddb71`.
+
+### Git
+
+```bash
+git revert --no-commit dcddb71..HEAD && git commit
+```
+
+### Database
+
+The forward migration renames rather than drops, so it is reversible. Reverse it
+by renaming the columns back, dropping the added ones, and recreating the old
+enum:
+
+```sql
+ALTER TABLE "GuestSession" RENAME COLUMN "gatewayToken"  TO "sessionToken";
+ALTER TABLE "GuestSession" RENAME COLUMN "gatewayHost"   TO "hwcIp";
+ALTER TABLE "GuestSession" RENAME COLUMN "gatewayPort"   TO "hwcPort";
+ALTER TABLE "GuestSession" RENAME COLUMN "clientIp"      TO "userIp";
+ALTER TABLE "GuestSession" RENAME COLUMN "originalDest"  TO "dest";
+ALTER TABLE "GuestSession" RENAME COLUMN "preAuthRole"   TO "role";
+ALTER TABLE "GuestSession" RENAME COLUMN "apName"        TO "ap";
+ALTER TABLE "GuestSession" RENAME COLUMN "apLocation"    TO "aploc";
+ALTER TABLE "GuestSession" RENAME COLUMN "apSerial"      TO "sn";
+ALTER TABLE "GuestSession" RENAME COLUMN "gatewayParams" TO "rawQuery";
+ALTER TABLE "GuestSession" RENAME COLUMN "requestHeaders" TO "rawHeaders";
+ALTER TABLE "GuestSession"
+  DROP COLUMN "clientMacRaw", DROP COLUMN "bssid", DROP COLUMN "vns",
+  DROP COLUMN "redirectSignature", DROP COLUMN "redirectSignedAt",
+  DROP COLUMN "redirectExpiresAt", DROP COLUMN "sanitizedDest",
+  DROP COLUMN "destRejectionReason", DROP COLUMN "csrfTokenHash",
+  DROP COLUMN "authorizationAttemptedAt", DROP COLUMN "authorizedAt",
+  DROP COLUMN "authorizationResult", DROP COLUMN "failureReason",
+  DROP COLUMN "authorizedRole", DROP COLUMN "disconnectedAt";
+ALTER TABLE "AuditEvent" DROP COLUMN "severity";
+DELETE FROM "_prisma_migrations" WHERE migration_name = '20260807001000_ecp_session_model';
+```
+
+Rows added since the migration whose status is one of the four new enum values
+must be mapped to an old value before the enum can be recreated. Take a dump
+first: the columns dropped here (the whole authorization record) have no
+equivalent in the old schema and are not recoverable afterwards.

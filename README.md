@@ -1,142 +1,87 @@
 # OS-ONE-CWP
 
-A lightweight cloud-hosted Captive Web Portal proof of concept for Extreme Campus Controller External CWP/UAP workflows.
+An externally hosted Captive Web Portal for the ExtremeCloud IQ Controller (XCC)
+External Captive Portal (ECP) workflow.
 
-## What this is
+A guest joins the WLAN, the access point intercepts their first HTTP request and
+redirects them here with a signed set of parameters, they accept the terms, and
+this service hands their browser a signed authorization URL that moves the
+station into its authenticated role. Every step is recorded.
 
-OS-ONE-CWP is a basic external captive portal endpoint. When an Extreme Campus Controller redirects a guest device to this service, it:
+## Flow
 
-1. Captures all query parameters the controller provides
-2. Captures request headers and source IP (sensitive headers scrubbed before storage)
-3. Creates a persisted guest session record in PostgreSQL
-4. Displays Terms and Conditions to the guest
-5. Records acceptance with a timestamp and audit event
-6. Safely redirects the guest to the controller-specified destination URL
+```
+station ──── guest WLAN ──── access point ──── XCC
+   │                            │
+   │  1. HTTP intercepted, 307 to the ECP URL, SigV4-signed
+   ├──► GET  /portal            verify signature → create session → signed cookie
+   ├──►      /portal/consent    terms + CSRF-protected form
+   ├──► POST /api/accept        issue the presigned /ext_approval.php URL
+   ├──► GET  <gateway>/ext_approval.php   gateway authorizes the station
+   └──► GET  /success           record AUTHORIZED → forward to the original page
+```
 
-## What this is not
+The authorization callback is made by the **browser**, not by this server. The
+ECP handler lives on the access point serving the station and is only reachable
+from the wireless link. Full protocol notes, measured against a live controller:
+[`docs/ECP_PROTOCOL.md`](docs/ECP_PROTOCOL.md).
 
-- Not Extreme Guest Essentials
-- Not a marketing or loyalty platform
-- Not a social login platform
-- No sponsor approval workflows
-- No voucher codes or PPSK management
-- No email or SMS
-- No multi-tenancy
+## What it does
 
-## Phase 1 Scope
+- Verifies the AWS SigV4 signature on every gateway redirect, against the raw
+  query string, with expiry and clock-skew bounds
+- Validates the shape of every gateway parameter and refuses malformed requests
+- Constrains the ECP callback host to an explicit allowlist
+- Sanitises the guest's original destination (rejects `javascript:`, `data:`,
+  `file:`, protocol-relative and control-character forms) and falls back safely
+- Binds the browser to a server-side session with a signed HttpOnly cookie;
+  a fresh session is minted on every verified redirect, so it cannot be fixated
+- Protects the consent form with a single-use CSRF token, checked against both
+  a server-side hash and an HttpOnly cookie
+- Treats a replayed redirect and a resubmitted form as idempotent, never as a
+  second authorization
+- Records the session, the authorization outcome and a full audit trail in a
+  dedicated Postgres database
+- Reports readiness at `/health`, logs structured JSON with secret redaction,
+  and shows guests controlled error pages rather than stack traces
 
-- [x] External redirect landing page (`/portal`)
-- [x] Terms and Conditions acceptance
-- [x] Guest session logging with all controller-provided fields
-- [x] Raw query parameter capture
-- [x] Raw header capture (auth/cookie headers scrubbed)
-- [x] Source IP detection (proxy-aware: Cloudflare → X-Forwarded-For → X-Real-IP)
-- [x] Safe redirect validation (blocks javascript:, data:, file:, vbscript:, protocol-relative)
-- [x] Admin session viewer (`/admin/sessions`)
-- [x] Session detail page with raw data and audit log
+## What it is not
 
-## Phase 1 Security Limitations
+Not Extreme Guest Essentials. No social login, sponsor approval, vouchers,
+PPSK, email/SMS, or multi-tenancy.
 
-These are known and accepted for the proof-of-concept phase:
+## Routes
 
-- **`/admin` has no authentication.** Before any real-world use, protect these routes behind a reverse proxy, VPN, or middleware. Do not expose them publicly.
-- **`/api/accept` has no session binding.** A client with a guessed sessionId could mark it accepted. Risk is low (CUIDs are non-enumerable, accept does not grant network access — the XCC controller controls that), but should be fixed in Phase 2 with HMAC-signed tokens.
-- **`/success?session=` leaks a session ID in the URL.** Only clientMac, ssid, and acceptedAt are exposed. The CUID is non-enumerable.
+| Route | Purpose |
+|---|---|
+| `/portal` | ECP entry point — configure this as the gateway's ECP URL |
+| `/portal/consent` | Terms and acceptance form |
+| `/portal/error` | Controlled error pages |
+| `/api/accept` | Issues the presigned gateway authorization URL |
+| `/success` | Authorization receipt; forwards to the original destination |
+| `/health` | Configuration + database probe |
+| `/admin/sessions` | Session browser — requires `?k=<ADMIN_TOKEN>`, disabled when unset |
 
-## Local Setup
-
-### Prerequisites
-
-- Node.js 18+
-- PostgreSQL running locally
-
-### Steps
+## Local setup
 
 ```bash
-git clone https://github.com/thomassophiea/OS-ONE-CWP.git
-cd OS-ONE-CWP
 npm install
-cp .env.example .env
-# Edit .env — set DATABASE_URL to your local Postgres connection string
-npx prisma migrate dev
+cp .env.example .env      # fill in DATABASE_URL, XCC_*, SESSION_SECRET
+npx prisma migrate deploy
 npm run dev
 ```
 
-App runs at http://localhost:3000
+`/portal` requires a validly signed request, so it cannot be exercised by hand.
+Drive it from a real gateway, or sign a request with the same shared secret.
 
-## Railway Setup
-
-1. Connect this GitHub repo to Railway
-2. Add a **PostgreSQL** service in Railway (Database → Add)
-3. Railway automatically injects `DATABASE_URL` from the Postgres service
-4. Set these environment variables in Railway → your service → Variables:
-   - `APP_BASE_URL=https://os-one-cwp-production.up.railway.app`
-   - `ALLOWED_REDIRECT_DOMAINS=` (leave blank for Phase 1, or restrict to known domains)
-   - `NODE_ENV=production`
-5. Deploy (Railway auto-deploys on push to main)
-6. After first successful deploy, run the database migration via Railway shell:
-   ```bash
-   npx prisma migrate deploy
-   ```
-
-## Test URLs
-
-**Portal (simulates a controller redirect):**
-```
-https://os-one-cwp-production.up.railway.app/portal?client_mac=AA:BB:CC:DD:EE:FF&ssid=GuestWiFi&redirect_url=https://example.com
+```bash
+npm test          # 94 tests, including a conformance check against a
+                  # signature captured from a live AP5020
+npm run type-check
 ```
 
-**Admin sessions list:**
-```
-https://os-one-cwp-production.up.railway.app/admin/sessions
-```
+## Deployment
 
-## Extreme Campus Controller Test Plan
-
-1. Create a test WLAN/SSID on the controller
-2. Enable captive portal using **External CWP / UAP** mode
-3. Set the external portal URL to:
-   ```
-   https://os-one-cwp-production.up.railway.app/portal
-   ```
-4. Connect a phone or laptop to the SSID
-5. Confirm the controller redirects the browser to OS-ONE-CWP
-6. Review and accept the Terms and Conditions
-7. Confirm the redirect behavior (does the controller handle post-auth, or does the portal?)
-8. Check `/admin/sessions` for the captured session record
-9. Open the session detail page
-10. Copy the raw query parameters and raw headers — this reveals exactly what the real controller sends
-
-## Unknowns to Validate with Real Controller
-
-- Exact query parameter names the XCC uses for client MAC, AP MAC, redirect URL
-- Whether the controller redirects the client after portal acceptance, or the portal must redirect
-- Whether the controller expects a specific success URL format
-- Whether the controller requires a token echoed back in the success redirect
-- Whether the controller requires an API callback to authorize the session
-- Whether the controller requires RADIUS accounting
-- Whether authorization is based purely on the portal redirect or an external callback to the controller
-
-## Roadmap — Next Phases
-
-After validating redirect behavior with a real controller:
-
-1. Admin authentication (middleware with JWT or session-based auth)
-2. Portal branding and custom themes per SSID
-3. Multiple portal profiles
-4. Self-registration (name + email capture)
-5. Sponsor approval workflow
-6. Voucher / one-time-code support
-7. HMAC-signed session tokens for `/api/accept`
-8. Controller-specific authorization callback (if required by XCC)
-9. Local hosting / container packaging
-
-## Environment Variables
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `DATABASE_URL` | Yes | PostgreSQL connection string |
-| `APP_BASE_URL` | Yes | Public URL of this deployment (no trailing slash) |
-| `ALLOWED_REDIRECT_DOMAINS` | No | Comma-separated allowed redirect domains. Blank = allow any https URL |
-| `DEFAULT_SUCCESS_URL` | No | Override fallback redirect after acceptance |
-| `NODE_ENV` | No | Set to `production` on Railway |
+Railway service `OS-ONE-CWP`, backed by the dedicated `PostgresCWP` database.
+Variables, gateway settings, migration procedure, secret rotation and rollback:
+[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
