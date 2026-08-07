@@ -26,6 +26,10 @@ const MESSAGES: Record<string, { title: string; body: string }> = {
     title: "Network not supported",
     body: "This portal is not configured for the network you are connecting from. Please contact the network administrator.",
   },
+  open_browser: {
+    title: "Open a browser to continue",
+    body: "Your device opened this page automatically, and it cannot agree to the terms on your behalf. Open Safari, Chrome or any browser, visit any website, and accept the terms there.",
+  },
   consent: {
     title: "You need to accept the terms",
     body: "Tick the agreement box on the sign-in page and press Connect. If your device opened this page automatically, open a browser and try again.",

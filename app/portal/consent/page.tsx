@@ -10,6 +10,10 @@ import {
 } from "@/lib/session/cookie";
 import { isExpired } from "@/lib/session/repository";
 import { normalizeMac } from "@/lib/captive/extractSessionFields";
+import {
+  isConnectivityProbe,
+  looksLikeCaptiveAssistant,
+} from "@/lib/captive/safeRedirect";
 import ConsentForm from "./ConsentForm";
 
 export const runtime = "nodejs";
@@ -35,6 +39,13 @@ export default async function ConsentPage() {
   if (session.status === "AUTHORIZED" || session.status === "ACCEPTED") {
     redirect("/success");
   }
+
+  // An operating-system connectivity probe, not a person: the destination is a
+  // known probe URL and/or the client is a bare-WebKit captive-assistant view.
+  // These clients auto-complete forms, so they get instructions, not a form.
+  const viaAssistant =
+    isConnectivityProbe(session.originalDest) ||
+    looksLikeCaptiveAssistant(session.userAgent);
 
   return (
     <main className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
@@ -72,10 +83,21 @@ export default async function ConsentPage() {
           </p>
         )}
 
-        <ConsentForm
-          csrfToken={csrfToken}
-          challenge={consentChallenge(session.id)}
-        />
+        {viaAssistant ? (
+          <div className="rounded-xl bg-blue-50 border border-blue-200 p-4 text-sm text-blue-900">
+            <p className="font-semibold mb-1">Open a browser to continue</p>
+            <p>
+              Your device opened this page automatically. To agree to the terms
+              and get online, open Safari, Chrome or any browser and visit any
+              website — this page will appear again and you can accept it there.
+            </p>
+          </div>
+        ) : (
+          <ConsentForm
+            csrfToken={csrfToken}
+            challenge={consentChallenge(session.id)}
+          />
+        )}
 
         <p className="mt-6 text-center text-xs text-slate-400">OS-ONE-CWP</p>
       </div>

@@ -175,3 +175,61 @@ export function safeInternalRedirect(
     return fallback;
   }
 }
+
+/**
+ * Hosts operating systems fetch to decide whether a network is behind a captive
+ * portal. A redirect whose original destination is one of these did not come
+ * from a person opening a page — it came from the OS connectivity check, and the
+ * page is being rendered inside a captive-assistant webview.
+ *
+ * This matters because macOS's Captive Network Assistant does not merely display
+ * the portal: on 2026-08-07 it was observed ticking the agreement checkbox,
+ * satisfying the interaction and dwell checks, and authorizing the station with
+ * nobody touching the device. Its user agent is bare WebKit with no `Version/`
+ * or `Safari/` token, and its destination is always the probe URL below.
+ *
+ * Consent given by an operating system on a guest's behalf is not consent, so
+ * these clients are shown an instruction to open a browser instead of a form.
+ */
+const CONNECTIVITY_PROBE_HOSTS = new Set([
+  "captive.apple.com",
+  "www.apple.com",
+  "connectivitycheck.gstatic.com",
+  "connectivitycheck.android.com",
+  "clients3.google.com",
+  "www.gstatic.com",
+  "www.msftconnecttest.com",
+  "www.msftncsi.com",
+  "detectportal.firefox.com",
+  "connectivity-check.ubuntu.com",
+  "network-test.debian.org",
+  "nmcheck.gnome.org",
+]);
+
+export function isConnectivityProbe(dest: string | null | undefined): boolean {
+  if (!dest) return false;
+  const absolute = toAbsoluteDestination(dest);
+  if (!absolute) return false;
+  try {
+    return CONNECTIVITY_PROBE_HOSTS.has(new URL(absolute).hostname.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * A browser a person is actually driving identifies itself with a product token
+ * (`Safari/`, `Chrome/`, `Firefox/`, `Edg/`, …). Captive-assistant webviews send
+ * bare `AppleWebKit/… (KHTML, like Gecko)` with nothing after it.
+ */
+export function looksLikeCaptiveAssistant(
+  userAgent: string | null | undefined
+): boolean {
+  if (!userAgent) return false;
+  if (/CaptiveNetworkSupport/i.test(userAgent)) return true;
+  const hasProductToken =
+    /\b(Safari|Chrome|CriOS|Firefox|FxiOS|Edg|EdgiOS|OPR|SamsungBrowser)\/[\d.]+/i.test(
+      userAgent
+    );
+  return /AppleWebKit\//i.test(userAgent) && !hasProductToken;
+}

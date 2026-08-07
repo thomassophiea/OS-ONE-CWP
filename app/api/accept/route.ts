@@ -13,6 +13,8 @@ import { buildEcpApprovalUrl } from "@/lib/captive/ecpSigV4";
 import {
   gatewayHostAllowlist,
   isAllowedGatewayHost,
+  isConnectivityProbe,
+  looksLikeCaptiveAssistant,
 } from "@/lib/captive/safeRedirect";
 import { hostIsAllowed, getRequestMetadata } from "@/lib/request/getRequestMetadata";
 import {
@@ -119,6 +121,21 @@ export async function POST(request: NextRequest) {
       clientMac: session.clientMac,
     });
     return fail(base, "csrf");
+  }
+
+  // Refuse acceptance from an operating-system captive assistant. It will tick
+  // the box, satisfy the interaction proof and beat any dwell threshold, so the
+  // only way to keep consent meaningful is to require a real browser.
+  if (
+    isConnectivityProbe(session.originalDest) ||
+    looksLikeCaptiveAssistant(request.headers.get("user-agent"))
+  ) {
+    await audit(session.id, "ACCEPT_FROM_OS_ASSISTANT", "warn", {
+      clientMac: session.clientMac,
+      originalDest: session.originalDest,
+      userAgent: request.headers.get("user-agent"),
+    });
+    return fail(base, "open_browser");
   }
 
   // Consent must be deliberate. macOS's Captive Network Assistant was observed
