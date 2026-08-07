@@ -38,6 +38,10 @@ const MESSAGES: Record<string, { title: string; body: string }> = {
     title: "We couldn't complete your connection",
     body: "The network gateway declined the request. Reconnect to the Wi-Fi network and try again, or contact the network administrator.",
   },
+  revoked: {
+    title: "Guest access has been withdrawn",
+    body: "This device is no longer permitted on the guest network. Please contact the network administrator.",
+  },
   unavailable: {
     title: "The portal is temporarily unavailable",
     body: "Please wait a moment and try again. If this continues, contact the network administrator.",

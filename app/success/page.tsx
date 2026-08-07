@@ -4,6 +4,7 @@ import { log } from "@/lib/log";
 import { SESSION_COOKIE, readSessionCookie } from "@/lib/session/cookie";
 import { audit } from "@/lib/session/repository";
 import { normalizeMac } from "@/lib/captive/extractSessionFields";
+import { recordAuthorizedGuest } from "@/lib/guests/repository";
 import { toAbsoluteDestination } from "@/lib/captive/safeRedirect";
 import ForwardToDestination from "./ForwardToDestination";
 
@@ -62,6 +63,21 @@ export default async function SuccessPage({
         ssid: session.ssid,
         gatewayHost: session.gatewayHost,
       });
+
+      // The gateway has confirmed the grant, so the standing ledger AURA
+      // manages catches up here rather than at consent time — an approval URL
+      // that was issued but never fetched is not an authorized guest.
+      if (session.clientMac) {
+        await recordAuthorizedGuest({
+          macAddress: session.clientMac,
+          ssid: session.ssid,
+          wlan: session.wlan,
+          gatewayHost: session.gatewayHost,
+          apName: session.apName,
+          apSerial: session.apSerial,
+          sessionId: session.id,
+        }).catch((err) => log.error("success_guest_record_failed", { err }));
+      }
     } catch (err) {
       log.error("success_update_failed", { err });
     }

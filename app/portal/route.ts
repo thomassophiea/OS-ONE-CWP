@@ -6,6 +6,7 @@ import {
   appBaseUrl,
   appHost,
   allowedHosts,
+  approvalUrlTtlSeconds,
   ecpPath,
   sessionTtlSeconds,
   signatureSkewSeconds,
@@ -13,7 +14,13 @@ import {
   xccSharedSecret,
   ConfigurationError,
 } from "@/lib/env";
-import { verifyEcpRedirect } from "@/lib/captive/ecpSigV4";
+import { buildEcpApprovalUrl, verifyEcpRedirect } from "@/lib/captive/ecpSigV4";
+import {
+  findByMac,
+  effectiveStatus,
+  mayBypassConsent,
+  touchGuestSeen,
+} from "@/lib/guests/repository";
 import {
   extractSessionFields,
   validateSessionFields,
@@ -117,7 +124,30 @@ export async function GET(request: NextRequest) {
     return errorRedirect(base, "unsupported_gateway");
   }
 
-  // --- 4. original destination -------------------------------------------
+  // --- 4. standing authorization for this device --------------------------
+  // Looked up before a session exists, so a revoked device is turned away
+  // without one being minted for it.
+  const canonicalClientMac = fields.clientMac ? normalizeMac(fields.clientMac) : null;
+  let ledgerEntry = null;
+  try {
+    ledgerEntry = canonicalClientMac ? await findByMac(canonicalClientMac) : null;
+  } catch (err) {
+    // The guest flow must survive the ledger being unavailable: without it the
+    // portal simply falls back to asking for consent, which is the behaviour
+    // that existed before this record did.
+    log.error("portal_guest_lookup_failed", { err });
+  }
+
+  if (ledgerEntry && effectiveStatus(ledgerEntry) === "REVOKED") {
+    await audit(null, "GUEST_ACCESS_REVOKED_AT_PORTAL", "warn", {
+      clientMac: canonicalClientMac,
+      ssid: fields.ssid,
+      revokedAt: ledgerEntry.revokedAt?.toISOString() ?? null,
+    });
+    return errorRedirect(base, "revoked");
+  }
+
+  // --- 5. original destination -------------------------------------------
   const destVerdict = sanitizeOriginalDestination(fields.originalDest, "");
   const csrf = newCsrfToken();
   const now = new Date();
@@ -206,6 +236,38 @@ export async function GET(request: NextRequest) {
     durationMs: Date.now() - startedAt,
   });
 
+  // Note the sighting on a device the operator already knows about. Never
+  // creates a ledger row — see `touchGuestSeen`.
+  if (canonicalClientMac) {
+    await touchGuestSeen({
+      macAddress: canonicalClientMac,
+      ssid: fields.ssid,
+      wlan: fields.wlan,
+      gatewayHost: fields.gatewayHost,
+      apName: fields.apName,
+      apSerial: fields.apSerial,
+      sessionId,
+    }).catch((err) => log.error("portal_guest_touch_failed", { err }));
+  }
+
+  // --- pre-authorized device: skip the consent form -----------------------
+  // Only an operator-entered authorization gets here (see `mayBypassConsent`),
+  // which is what makes "add this MAC in AURA" actually grant access rather
+  // than merely record an intention.
+  if (mayBypassConsent(ledgerEntry)) {
+    const preAuthResponse = await approveWithoutConsent({
+      base,
+      sessionId,
+      fields,
+      identity,
+      secret,
+      ledgerId: ledgerEntry!.id,
+    });
+    if (preAuthResponse) return withSessionCookie(preAuthResponse, sessionId);
+    // Falling through means the approval URL could not be built; the guest
+    // still gets the ordinary consent flow rather than an error page.
+  }
+
   // Redirect to the consent page rather than rendering here: the session id is
   // minted fresh on every verified redirect and handed over in a signed cookie,
   // so a pre-set cookie cannot fixate a session, and the long signed URL is
@@ -220,6 +282,93 @@ export async function GET(request: NextRequest) {
     sessionCookieOptions(sessionTtlSeconds())
   );
   return withSessionCookie(response, sessionId);
+}
+
+/**
+ * Issue the gateway approval for a device an operator pre-authorized.
+ *
+ * Identical to what `/api/accept` produces once a guest ticks the box — the
+ * same signed `/ext_approval.php` URL, fetched by the same browser — so a
+ * manually added MAC is authorized through exactly the mechanism the portal
+ * uses, not a parallel one. The consent step is what is skipped, nothing else.
+ *
+ * Returns null if the session lacks a field the callback needs, so the caller
+ * can fall back to the ordinary flow.
+ */
+async function approveWithoutConsent({
+  base,
+  sessionId,
+  fields,
+  identity,
+  secret,
+  ledgerId,
+}: {
+  base: string;
+  sessionId: string;
+  fields: ReturnType<typeof extractSessionFields>;
+  identity: string;
+  secret: string;
+  ledgerId: string;
+}): Promise<NextResponse | null> {
+  if (!fields.gatewayHost || !fields.gatewayToken || !fields.wlan || !fields.clientMac) {
+    await audit(sessionId, "PREAUTH_SESSION_INCOMPLETE", "error", {
+      clientMac: fields.clientMac,
+    });
+    return null;
+  }
+
+  const confirmUrl = new URL("/success", base);
+  confirmUrl.searchParams.set("s", sessionId);
+
+  let approvalUrl: string;
+  try {
+    approvalUrl = buildEcpApprovalUrl({
+      gatewayHost: fields.gatewayHost,
+      gatewayPort: fields.gatewayPort ?? "443",
+      token: fields.gatewayToken,
+      username: fields.clientMac,
+      wlan: fields.wlan,
+      dest: confirmUrl.toString(),
+      identity,
+      sharedSecret: secret,
+      expiresSeconds: approvalUrlTtlSeconds(),
+    });
+  } catch (err) {
+    log.error("preauth_sign_failed", { err });
+    return null;
+  }
+
+  const now = new Date();
+  try {
+    await prisma.guestSession.update({
+      where: { id: sessionId },
+      data: {
+        status: "ACCEPTED",
+        // Not `acceptedTerms`: nobody accepted anything. The operator vouched
+        // for this device, and the audit trail must not claim otherwise.
+        acceptedTerms: false,
+        authorizationAttemptedAt: now,
+        authorizationResult: "PREAUTHORIZED_APPROVAL_URL_ISSUED",
+        // No consent form will be shown, so the token can never be used.
+        csrfTokenHash: null,
+      },
+    });
+  } catch (err) {
+    log.error("preauth_update_failed", { err });
+    return null;
+  }
+
+  await audit(sessionId, "PREAUTHORIZED_APPROVAL_ISSUED", "info", {
+    clientMac: fields.clientMac,
+    guestId: ledgerId,
+    ssid: fields.ssid,
+    wlan: fields.wlan,
+    gatewayHost: fields.gatewayHost,
+  });
+
+  const response = NextResponse.redirect(approvalUrl, 303);
+  response.cookies.delete(CSRF_COOKIE);
+  return response;
 }
 
 function withSessionCookie(response: NextResponse, sessionId: string) {

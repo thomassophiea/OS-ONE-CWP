@@ -25,6 +25,73 @@ enum SessionStatus {
   EXPIRED
   /// Station left the WLAN.
   DISCONNECTED
+  /// An operator withdrew this guest's access while the session was live.
+  REVOKED
+}
+
+/// How a guest's authorization came to exist.
+enum GuestSource {
+  /// The guest completed the captive portal consent flow.
+  CAPTIVE_PORTAL
+  /// An operator entered the MAC in AURA before (or without) the guest connecting.
+  MANUAL
+  /// Observed on the gateway without a matching portal session.
+  GATEWAY
+}
+
+enum GuestAuthorizationStatus {
+  /// Access is granted: the portal will approve this station on sight.
+  ACTIVE
+  /// An operator withdrew access. Retained for audit; never silently deleted.
+  REVOKED
+  /// `expiresAt` has passed.
+  EXPIRED
+}
+
+/// The authorization ledger, keyed by station MAC.
+///
+/// `GuestSession` records what happened during one portal visit; this record is
+/// the standing answer to "may this device use the guest network?". It is what
+/// the portal consults on redirect and what AURA manages, so a manually added
+/// MAC and a guest who came through the portal are the same kind of thing.
+model GuestAuthorization {
+  id            String                   @id @default(cuid())
+  /// Canonical `aa:bb:cc:dd:ee:ff`. One standing authorization per device.
+  macAddress    String                   @unique
+  displayName   String?
+  email         String?
+  phone         String?
+  notes         String?
+  source        GuestSource              @default(CAPTIVE_PORTAL)
+  status        GuestAuthorizationStatus @default(ACTIVE)
+
+  // ---- last known network context (portal-observed) ----
+  ssid          String?
+  wlan          String?
+  gatewayHost   String?
+  apName        String?
+  apSerial      String?
+  siteId        String?
+
+  // ---- lifecycle ----
+  firstSeen     DateTime?
+  lastSeen      DateTime?
+  authorizedAt  DateTime?
+  expiresAt     DateTime?
+  revokedAt     DateTime?
+  revokedBy     String?
+  createdBy     String?
+  /// Most recent portal session for this device, when there is one.
+  lastSessionId String?
+
+  createdAt     DateTime                 @default(now())
+  updatedAt     DateTime                 @updatedAt
+
+  @@index([status])
+  @@index([lastSeen])
+  @@index([expiresAt])
+  @@index([source])
+  @@index([status, lastSeen])
 }
 
 model GuestSession {
