@@ -1,167 +1,219 @@
 import { NextRequest, NextResponse } from "next/server";
-import { isIP } from "net";
 import { prisma } from "@/lib/prisma";
-import { getSafeRedirectUrl } from "@/lib/captive/safeRedirect";
-import { buildSignedEcpCallbackUrl } from "@/lib/captive/signEcpCallback";
+import { log } from "@/lib/log";
+import {
+  appBaseUrl,
+  allowedHosts,
+  approvalUrlTtlSeconds,
+  xccIdentity,
+  xccSharedSecret,
+  ConfigurationError,
+} from "@/lib/env";
+import { buildEcpApprovalUrl } from "@/lib/captive/ecpSigV4";
+import {
+  gatewayHostAllowlist,
+  isAllowedGatewayHost,
+} from "@/lib/captive/safeRedirect";
+import { hostIsAllowed, getRequestMetadata } from "@/lib/request/getRequestMetadata";
+import {
+  SESSION_COOKIE,
+  CSRF_COOKIE,
+  readSessionCookie,
+  csrfTokenMatches,
+} from "@/lib/session/cookie";
+import { audit, isExpired } from "@/lib/session/repository";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+/**
+ * Consent handler. Its sole job is to turn an accepted session into the
+ * presigned `/ext_approval.php` URL that the *browser* must fetch.
+ *
+ * The callback cannot be made server-side: the ECP handler lives on the access
+ * point serving the station (reachable only from the wireless client's link),
+ * while this application runs on Railway. Handing the browser a signed URL is
+ * the protocol's intended shape, not a workaround.
+ */
 export async function POST(request: NextRequest) {
-  // Derive base URL from request if APP_BASE_URL is not set — ensures redirects
-  // are always absolute (NextResponse.redirect rejects relative URLs).
-  const origin = new URL(request.url).origin;
-  const appBaseUrl = process.env.APP_BASE_URL ?? origin;
-  const contentType = request.headers.get("content-type") ?? "";
-  const isForm = contentType.includes("application/x-www-form-urlencoded") ||
-                 contentType.includes("multipart/form-data");
-
-  let sessionId: string | undefined;
-
-  if (isForm) {
-    try {
-      const data = await request.formData();
-      sessionId = data.get("sessionId")?.toString();
-    } catch {
-      return NextResponse.redirect(`${appBaseUrl}/portal`, 303);
-    }
-  } else {
-    try {
-      const body = await request.json();
-      sessionId = body.sessionId;
-    } catch {
-      return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
-    }
+  const startedAt = Date.now();
+  let base: string;
+  try {
+    base = appBaseUrl();
+  } catch {
+    base = new URL(request.url).origin;
   }
 
+  if (!hostIsAllowed(request.headers.get("host"), allowedHosts())) {
+    return new NextResponse("Not found", { status: 404 });
+  }
+
+  // Cross-origin form posts are refused outright; the consent form is served
+  // from this origin.
+  const origin = request.headers.get("origin");
+  if (origin && origin !== base) {
+    await audit(null, "ACCEPT_CROSS_ORIGIN", "warn", { origin });
+    return fail(base, "csrf");
+  }
+
+  const jar = request.cookies;
+  const sessionId = readSessionCookie(jar.get(SESSION_COOKIE)?.value);
   if (!sessionId) {
-    if (isForm) return NextResponse.redirect(`${appBaseUrl}/portal`, 303);
-    return NextResponse.json({ error: "sessionId is required" }, { status: 400 });
+    await audit(null, "ACCEPT_NO_SESSION", "warn", {});
+    return fail(base, "no_session");
+  }
+
+  let submittedCsrf: string | null = null;
+  try {
+    const form = await request.formData();
+    submittedCsrf = form.get("csrfToken")?.toString() ?? null;
+  } catch {
+    return fail(base, "bad_request");
   }
 
   let session;
   try {
     session = await prisma.guestSession.findUnique({ where: { id: sessionId } });
   } catch (err) {
-    console.error("DB error looking up session:", err);
-    if (isForm) return NextResponse.redirect(`${appBaseUrl}/portal`, 303);
-    return NextResponse.json({ error: "Session lookup failed" }, { status: 500 });
+    log.error("accept_lookup_failed", { err });
+    return fail(base, "unavailable");
   }
-
   if (!session) {
-    if (isForm) return NextResponse.redirect(`${appBaseUrl}/portal`, 303);
-    return NextResponse.json({ error: "Session not found" }, { status: 404 });
+    await audit(null, "ACCEPT_SESSION_NOT_FOUND", "warn", { sessionId });
+    return fail(base, "no_session");
   }
 
-  const internalFallback =
-    process.env.DEFAULT_SUCCESS_URL ??
-    `${appBaseUrl}/success?session=${sessionId}`;
+  // The token must match both the server-side hash and the HttpOnly cookie,
+  // so neither a stolen form field nor a stolen cookie alone is sufficient.
+  const cookieCsrf = jar.get(CSRF_COOKIE)?.value ?? null;
+  if (
+    !csrfTokenMatches(submittedCsrf, session.csrfTokenHash) ||
+    !cookieCsrf ||
+    cookieCsrf !== submittedCsrf
+  ) {
+    await audit(session.id, "ACCEPT_CSRF_REJECTED", "warn", {
+      clientMac: session.clientMac,
+    });
+    return fail(base, "csrf");
+  }
 
-  const allowedDomains = (process.env.ALLOWED_REDIRECT_DOMAINS ?? "")
-    .split(",")
-    .map((d) => d.trim().toLowerCase())
-    .filter(Boolean);
+  if (isExpired(session)) {
+    await prisma.guestSession
+      .update({ where: { id: session.id }, data: { status: "EXPIRED" } })
+      .catch(() => undefined);
+    await audit(session.id, "ACCEPT_SESSION_EXPIRED", "warn", {
+      clientMac: session.clientMac,
+    });
+    return fail(base, "expired");
+  }
 
-  const xccIdentity = process.env.XCC_IDENTITY;
-  const xccSharedSecret = process.env.XCC_SHARED_SECRET;
-  // XCC_CONTROLLER_IP overrides hwc_ip from the session. Use this when the XCC
-  // sends hwc_ip=apcp.ezcloudx.com (cloud relay) but the relay doesn't work —
-  // the captive browser is on-LAN and can reach the controller's real IP directly.
-  const xccControllerIp = process.env.XCC_CONTROLLER_IP ?? null;
-
-  let xccCallbackUrl: string | null = null;
+  // Duplicate submission (double-click, back-button re-post): do not issue a
+  // second authorization, just send the guest to the success page.
+  if (session.status === "ACCEPTED" || session.status === "AUTHORIZED") {
+    await audit(session.id, "ACCEPT_DUPLICATE", "info", {
+      status: session.status,
+    });
+    return NextResponse.redirect(new URL("/success", base), 303);
+  }
 
   if (
-    session.hwcIp &&
-    session.sessionToken &&
-    session.wlan &&
-    xccIdentity &&
-    xccSharedSecret
+    !session.gatewayHost ||
+    !session.gatewayToken ||
+    !session.wlan ||
+    !session.clientMacRaw
   ) {
-    // If XCC_CONTROLLER_IP is set, use it directly — bypasses the broken cloud
-    // relay (apcp.ezcloudx.com → 1.1.1.1). Captive browser reaches XCC on LAN.
-    const effectiveHwcIp = xccControllerIp ?? session.hwcIp;
-    const effectiveHwcPort = xccControllerIp ? "80" : session.hwcPort;
-
-    const hwcHostLower = effectiveHwcIp.toLowerCase();
-    const isPrivateLiteralIp =
-      isIP(effectiveHwcIp) !== 0 &&
-      (/^192\.168\./.test(hwcHostLower) ||
-        /^10\./.test(hwcHostLower) ||
-        /^172\.(1[6-9]|2\d|3[01])\./.test(hwcHostLower));
-    const allowInsecure =
-      process.env.XCC_ALLOW_INSECURE_CALLBACK === "true";
-    const hostAllowed =
-      (xccControllerIp !== null && isPrivateLiteralIp && allowInsecure) ||
-      (!xccControllerIp &&
-        allowedDomains.length > 0 &&
-        allowedDomains.some(
-          (d) => hwcHostLower === d || hwcHostLower.endsWith(`.${d}`)
-        )) ||
-      (!xccControllerIp && isPrivateLiteralIp && allowInsecure);
-    const portValid = !effectiveHwcPort || /^\d{1,5}$/.test(effectiveHwcPort);
-
-    if (hostAllowed && portValid) {
-      xccCallbackUrl = buildSignedEcpCallbackUrl({
-        hwcIp: effectiveHwcIp,
-        hwcPort: effectiveHwcPort,
-        token: session.sessionToken,
-        wlan: session.wlan,
-        clientMac: session.clientMac ?? "guest",
-        dest: session.dest,
-        identity: xccIdentity,
-        sharedSecret: xccSharedSecret,
-        forceHttp: isPrivateLiteralIp && allowInsecure,
-      });
-    }
+    await audit(session.id, "ACCEPT_SESSION_INCOMPLETE", "error", {
+      hasHost: Boolean(session.gatewayHost),
+      hasToken: Boolean(session.gatewayToken),
+      hasWlan: Boolean(session.wlan),
+      hasMac: Boolean(session.clientMacRaw),
+    });
+    return fail(base, "authorization_failed");
   }
 
-  // Redirect the captive browser to the XCC's ext_approval.php directly.
-  // The browser is on the local network and can reach the XCC; we cannot
-  // (Railway is on the public internet, XCC is at a private IP, and
-  // apcp.ezcloudx.com is not a working cloud relay for this controller).
-  // When cpHttp=true the XCC sends hwc_port=80 and we build an http:// URL,
-  // so the browser can complete the ECP handshake without cert errors.
-  const destUrl = session.redirectUrl ?? session.successUrl ?? null;
-  const safeDestUrl = getSafeRedirectUrl(destUrl, internalFallback);
-
-  // The ECP callback URL goes to the XCC (private IP, possibly HTTP).
-  // Use it as the redirect target if we have one; otherwise fall back to the
-  // safe destination URL.
-  const redirectTarget = xccCallbackUrl ?? safeDestUrl;
-
-  const wasBlocked =
-    destUrl !== null &&
-    safeDestUrl === internalFallback &&
-    destUrl !== internalFallback;
-
-  if (!session.acceptedTerms) {
-    try {
-      await prisma.guestSession.update({
-        where: { id: sessionId },
-        data: {
-          acceptedTerms: true,
-          acceptedAt: new Date(),
-          status: wasBlocked ? "BLOCKED_REDIRECT" : "ACCEPTED",
-        },
-      });
-
-      await prisma.auditEvent.create({
-        data: {
-          sessionId,
-          action: wasBlocked ? "TERMS_ACCEPTED_REDIRECT_BLOCKED" : "TERMS_ACCEPTED",
-          details: {
-            xccCallbackUrl,
-            redirectTarget,
-            destUrl,
-            wasBlocked,
-          },
-        },
-      });
-    } catch (err) {
-      console.error("DB error updating session:", err);
-      if (isForm) return NextResponse.redirect(`${appBaseUrl}/portal`, 303);
-      return NextResponse.json({ error: "Failed to update session" }, { status: 500 });
-    }
+  // Re-check the allowlist at signing time: the stored value could only have
+  // come from a verified redirect, but configuration may have changed since.
+  if (!isAllowedGatewayHost(session.gatewayHost, gatewayHostAllowlist())) {
+    await audit(session.id, "ACCEPT_GATEWAY_HOST_NOT_ALLOWED", "warn", {
+      gatewayHost: session.gatewayHost,
+    });
+    return fail(base, "unsupported_gateway");
   }
 
-  if (isForm) return NextResponse.redirect(redirectTarget, 303);
-  return NextResponse.json({ redirectUrl: redirectTarget });
+  let identity: string;
+  let secret: string;
+  try {
+    identity = xccIdentity();
+    secret = xccSharedSecret();
+  } catch (err) {
+    if (err instanceof ConfigurationError) {
+      log.error("accept_misconfigured", { variable: err.variable });
+      return fail(base, "unavailable");
+    }
+    throw err;
+  }
+
+  // Hand the gateway our own confirmation page as the post-approval
+  // destination, rather than the guest's original URL. The gateway only emits
+  // this redirect when it has actually authorized the station, so the browser
+  // arriving at /success is our evidence that the authorization succeeded — a
+  // refusal leaves the browser on the gateway's own error page instead. The
+  // guest's real destination is forwarded from there.
+  const confirmUrl = new URL("/success", base);
+  confirmUrl.searchParams.set("s", session.id);
+
+  const approvalUrl = buildEcpApprovalUrl({
+    gatewayHost: session.gatewayHost,
+    gatewayPort: session.gatewayPort ?? "443",
+    token: session.gatewayToken,
+    username: session.clientMacRaw,
+    wlan: session.wlan,
+    dest: confirmUrl.toString(),
+    identity,
+    sharedSecret: secret,
+    expiresSeconds: approvalUrlTtlSeconds(),
+  });
+
+  const meta = getRequestMetadata(request.headers);
+  const now = new Date();
+
+  try {
+    await prisma.guestSession.update({
+      where: { id: session.id },
+      data: {
+        status: "ACCEPTED",
+        acceptedTerms: true,
+        acceptedAt: now,
+        authorizationAttemptedAt: now,
+        authorizationResult: "APPROVAL_URL_ISSUED",
+        // Burn the CSRF token so the form cannot be replayed.
+        csrfTokenHash: null,
+        sourceIp: meta.sourceIp ?? session.sourceIp,
+      },
+    });
+  } catch (err) {
+    log.error("accept_update_failed", { err });
+    return fail(base, "unavailable");
+  }
+
+  await audit(session.id, "AUTHORIZATION_ISSUED", "info", {
+    clientMac: session.clientMac,
+    gatewayHost: session.gatewayHost,
+    gatewayPort: session.gatewayPort,
+    wlan: session.wlan,
+    // The URL carries a signature; record only its non-secret shape.
+    approvalScheme: session.gatewayPort === "80" ? "http" : "https",
+    destForwarded: Boolean(session.sanitizedDest),
+    durationMs: Date.now() - startedAt,
+  });
+
+  const response = NextResponse.redirect(approvalUrl, 303);
+  response.cookies.delete(CSRF_COOKIE);
+  return response;
+}
+
+function fail(base: string, code: string) {
+  const url = new URL("/portal/error", base);
+  url.searchParams.set("code", code);
+  return NextResponse.redirect(url, 303);
 }

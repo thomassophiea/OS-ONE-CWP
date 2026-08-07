@@ -1,34 +1,56 @@
-// Headers that may contain credentials or session tokens — excluded from rawHeaders
-// to avoid storing them in the audit DB. We still read them above for IP/UA extraction.
+import { trustProxy } from "@/lib/env";
+
+/**
+ * Headers that may carry credentials or session material. They are read for
+ * IP/UA extraction but never persisted, so the audit table cannot become a
+ * secondary credential store.
+ */
 const SENSITIVE_HEADER_RE =
   /^(authorization|proxy-authorization|cookie|set-cookie|x-api-key|cf-access-jwt-assertion|x-amz-security-token)$/i;
 
 export interface RequestMetadata {
+  /** Address of the guest's browser as best we can determine it. */
   sourceIp: string | null;
   userAgent: string | null;
-  rawHeaders: Record<string, string>;
+  headers: Record<string, string>;
 }
 
-export function getRequestMetadata(
-  headers: {
-    get: (name: string) => string | null;
-    forEach: (fn: (value: string, key: string) => void) => void;
-  }
-): RequestMetadata {
-  const rawHeaders: Record<string, string> = {};
+type HeaderBag = {
+  get: (name: string) => string | null;
+  forEach: (fn: (value: string, key: string) => void) => void;
+};
+
+export function getRequestMetadata(headers: HeaderBag): RequestMetadata {
+  const recorded: Record<string, string> = {};
   headers.forEach((value, key) => {
-    if (!SENSITIVE_HEADER_RE.test(key)) {
-      rawHeaders[key] = value;
-    }
+    if (!SENSITIVE_HEADER_RE.test(key)) recorded[key] = value;
   });
 
-  const sourceIp =
-    headers.get("cf-connecting-ip") ??
-    headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-    headers.get("x-real-ip") ??
-    null;
+  let sourceIp: string | null = null;
+  if (trustProxy()) {
+    // Railway terminates TLS and appends the real client address; take the
+    // left-most entry, which is the value that proxy set.
+    const forwarded = headers.get("x-forwarded-for");
+    sourceIp =
+      forwarded?.split(",")[0]?.trim() ||
+      headers.get("x-real-ip") ||
+      headers.get("cf-connecting-ip") ||
+      null;
+  }
 
-  const userAgent = headers.get("user-agent") ?? null;
+  return {
+    sourceIp,
+    userAgent: headers.get("user-agent"),
+    headers: recorded,
+  };
+}
 
-  return { sourceIp, userAgent, rawHeaders };
+/** Rejects requests whose Host header is not one we serve. */
+export function hostIsAllowed(
+  hostHeader: string | null,
+  allowed: string[]
+): boolean {
+  if (allowed.length === 0) return true;
+  if (!hostHeader) return false;
+  return allowed.includes(hostHeader.trim().toLowerCase());
 }

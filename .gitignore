@@ -45,3 +45,10 @@ next-env.d.ts
 .remember/
 
 /app/generated/prisma
+
+# stuck build dirs on this volume
+.next.broken-*
+
+# macOS AppleDouble sidecars (this repo lives on a non-native volume)
+._*
+.DS_Store

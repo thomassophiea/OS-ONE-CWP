@@ -7,59 +7,122 @@ datasource db {
 }
 
 enum SessionStatus {
+  /// Gateway redirect verified, portal rendered, guest has not acted yet.
   STARTED
+  /// Guest accepted the terms; the approval URL has been issued to the browser.
   ACCEPTED
-  REDIRECTED
+  /// Gateway confirmed the station moved into its authenticated role.
+  AUTHORIZED
+  /// Authorization was attempted and the gateway refused it.
+  AUTH_FAILED
+  /// Request reached the portal but was refused (bad signature, bad params).
+  REJECTED
+  /// The original destination failed sanitisation; guest sent to a safe page.
   BLOCKED_REDIRECT
+  /// Internal failure while handling the session.
   ERROR
+  /// Session outlived PORTAL_SESSION_TTL_SECONDS without completing.
   EXPIRED
+  /// Station left the WLAN.
+  DISCONNECTED
 }
 
 model GuestSession {
+  /// Internal portal session id (also the value bound into the signed cookie).
   id                  String        @id @default(cuid())
   status              SessionStatus @default(STARTED)
+
+  // ---- identity of the station and the gateway ----
+  /// Station MAC, normalised to aa:bb:cc:dd:ee:ff.
   clientMac           String?
-  apMac               String?
-  ssid                String?
-  wlan                String?
-  vlan                String?
-  site                String?
-  controller          String?
-  nasId               String?
-  sessionToken        String?
-  controllerSessionId String?
-  userIp              String?
+  /// Station MAC exactly as the gateway spelled it (needed for the callback).
+  clientMacRaw        String?
+  clientIp            String?
+  /// Peer address seen by the portal (Railway edge / X-Forwarded-For).
   sourceIp            String?
   userAgent           String?
-  redirectUrl         String?
-  successUrl          String?
-  hwcIp               String?
-  hwcPort             String?
-  dest                String?
-  ap                  String?
-  aploc               String?
-  role                String?
-  sn                  String?
-  rawQuery            Json?
-  rawHeaders          Json?
+
+  /// hwc_ip — the ECP callback host advertised by the gateway.
+  gatewayHost         String?
+  /// hwc_port — 80 or 443 depending on the role's "Use HTTPS connection" flag.
+  gatewayPort         String?
+  /// Opaque per-station token issued by the gateway; the callback credential.
+  gatewayToken        String?
+  apMac               String?
+  bssid               String?
+  apName              String?
+  apSerial            String?
+  apLocation          String?
+
+  // ---- WLAN context ----
+  ssid                String?
+  vns                 String?
+  /// WLAN index (the `wlan` parameter), required by the callback.
+  wlan                String?
+  vlan                String?
+  /// Pre-authentication role name reported in the redirect.
+  preAuthRole         String?
+
+  // ---- request provenance / replay control ----
+  /// Hex X-Amz-Signature of the redirect that created this session. Unique, so
+  /// a captured redirect URL cannot be replayed into a second session.
+  redirectSignature   String?       @unique
+  redirectSignedAt    DateTime?
+  redirectExpiresAt   DateTime?
+  /// Decoded gateway parameters, minus anything secret.
+  gatewayParams       Json?
+  /// Non-sensitive request headers, for audit.
+  requestHeaders      Json?
+
+  // ---- guest workflow ----
+  originalDest        String?
+  /// Destination after sanitisation; what we hand back to the gateway.
+  sanitizedDest       String?
+  destRejectionReason String?
   acceptedTerms       Boolean       @default(false)
   acceptedAt          DateTime?
+  /// SHA-256 of the CSRF token issued with the consent form.
+  csrfTokenHash       String?
+
+  // ---- authorization exchange ----
+  authorizationAttemptedAt DateTime?
+  authorizedAt             DateTime?
+  /// Free-form outcome label, e.g. GATEWAY_CONFIRMED / GATEWAY_REFUSED.
+  authorizationResult      String?
+  failureReason            String?
+  /// Role the gateway reported after authorization, when observed.
+  authorizedRole           String?
+
+  // ---- lifecycle ----
   expiresAt           DateTime?
+  disconnectedAt      DateTime?
   createdAt           DateTime      @default(now())
   updatedAt           DateTime      @updatedAt
+
   auditEvents         AuditEvent[]
 
-  @@index([createdAt])
   @@index([clientMac])
-  @@index([ssid])
+  @@index([gatewayToken])
+  @@index([createdAt])
   @@index([status])
+  @@index([authorizedAt])
+  @@index([ssid])
+  @@index([status, createdAt])
 }
 
 model AuditEvent {
   id        String        @id @default(cuid())
   sessionId String?
-  session   GuestSession? @relation(fields: [sessionId], references: [id])
+  session   GuestSession? @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  /// Machine-readable event name, e.g. REDIRECT_VERIFIED, AUTHORIZATION_ISSUED.
   action    String
+  /// "info" | "warn" | "error" — lets an operator filter for failures.
+  severity  String        @default("info")
   details   Json?
   createdAt DateTime      @default(now())
+
+  @@index([sessionId])
+  @@index([action])
+  @@index([createdAt])
+  @@index([severity])
 }
