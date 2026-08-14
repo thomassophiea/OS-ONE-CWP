@@ -24,6 +24,24 @@ function threshold(): number {
 const SECRET_KEY_RE =
   /(secret|password|passwd|pwd|token|authorization|cookie|apikey|api_key|signature|sharedkey|connection_?string|database_?url)/i;
 
+/**
+ * Keys carrying data a guest told us about themselves.
+ *
+ * Redacted **unconditionally**, not only when a guest has prohibited storage.
+ * Making it conditional would mean the logger had to know which session a line
+ * belongs to, and the one call site that forgot to pass it would be the one
+ * that leaked — a control that depends on being remembered at every call site
+ * is not a control. Nothing operational is lost: a session id identifies the
+ * visit, and a MAC identifies the device.
+ *
+ * The list mirrors `GUEST_FIELD_CATALOGUE` and the ledger's personal columns.
+ * It is duplicated here rather than imported so that the logger stays free of
+ * application imports — a logger that can fail to load is worse than one that
+ * repeats five words.
+ */
+const PERSONAL_KEY_RE =
+  /^(fullName|displayName|name|email|emailAddress|phone|phoneNumber|tel|company|organization|roomNumber|notes|guestFields)$/i;
+
 /** Values that look like a Postgres URL leak regardless of the key name. */
 const CONNECTION_STRING_RE = /\b[a-z][a-z0-9+.-]*:\/\/[^\s:@/]+:[^\s@/]+@/gi;
 
@@ -55,7 +73,9 @@ export function redact(value: unknown, depth = 0): unknown {
   if (typeof value === "object") {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      out[k] = SECRET_KEY_RE.test(k) ? "[redacted]" : redact(v, depth + 1);
+      if (SECRET_KEY_RE.test(k)) out[k] = "[redacted]";
+      else if (PERSONAL_KEY_RE.test(k)) out[k] = "[personal]";
+      else out[k] = redact(v, depth + 1);
     }
     return out;
   }

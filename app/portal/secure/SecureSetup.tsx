@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { format, type Messages } from "@/lib/i18n";
 
 /**
  * The secure-onboarding experience.
@@ -58,12 +59,16 @@ type Phase = "loading" | "ready" | "unavailable";
 const HANDHELD = new Set(["IOS", "IPADOS", "ANDROID"]);
 
 export default function SecureSetup({
+  messages,
   ssid,
   securityLabel,
   destination,
   safariUrl,
   handoffUrl,
 }: {
+  /** The guest's catalogue. Passed down rather than fetched: this component is
+   *  rendered inside captive webviews where an extra round trip is a risk. */
+  messages: Messages;
   ssid: string;
   securityLabel: string;
   destination: string | null;
@@ -110,10 +115,7 @@ export default function SecureSetup({
         const payload = await response.json().catch(() => null);
         if (cancelled) return;
         if (!response.ok) {
-          setError(
-            payload?.error?.message ??
-              "Secure Wi-Fi setup is unavailable right now. Your guest access is unaffected."
-          );
+          setError(payload?.error?.message ?? messages.secure.unavailableGeneric);
           setPhase("unavailable");
           return;
         }
@@ -122,7 +124,7 @@ export default function SecureSetup({
         setPhase("ready");
       } catch {
         if (cancelled) return;
-        setError("We couldn't start secure setup. Your guest access is unaffected.");
+        setError(messages.secure.unavailableStart);
         setPhase("unavailable");
       }
     })();
@@ -223,15 +225,13 @@ export default function SecureSetup({
       });
       const payload = await response.json().catch(() => null);
       if (!response.ok) {
-        setCredentialError(
-          payload?.error?.message ?? "The network details couldn't be retrieved."
-        );
+        setCredentialError(payload?.error?.message ?? messages.manual.failed);
         return;
       }
       setCredential(payload);
       startPolling();
     } catch {
-      setCredentialError("The network details couldn't be retrieved.");
+      setCredentialError(messages.manual.failed);
     } finally {
       setCredentialPending(false);
     }
@@ -252,7 +252,7 @@ export default function SecureSetup({
   if (phase === "loading") {
     return (
       <Card>
-        <p className="text-sm text-slate-500 text-center py-6">Preparing secure setup…</p>
+        <p className="text-sm text-slate-500 text-center py-6">{messages.secure.preparing}</p>
       </Card>
     );
   }
@@ -260,9 +260,9 @@ export default function SecureSetup({
   if (phase === "unavailable" || !view) {
     return (
       <Card>
-        <h1 className="text-lg font-bold text-slate-900">Secure Wi-Fi setup is unavailable</h1>
+        <h1 className="text-lg font-bold text-slate-900">{messages.secure.unavailableTitle}</h1>
         <p className="mt-2 text-sm text-slate-500">{error}</p>
-        <ContinueLink destination={destination} />
+        <ContinueLink destination={destination} messages={messages} />
       </Card>
     );
   }
@@ -280,10 +280,8 @@ export default function SecureSetup({
   return (
     <Card>
       <header>
-        <h1 className="text-xl font-bold text-slate-900">Secure Guest Access</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Use our encrypted Wi-Fi network for better security and automatic reconnect.
-        </p>
+        <h1 className="text-xl font-bold text-slate-900">{messages.secure.title}</h1>
+        <p className="mt-1 text-sm text-slate-500">{messages.secure.subtitle}</p>
       </header>
 
       <p className="mt-4 flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-900">
@@ -295,13 +293,10 @@ export default function SecureSetup({
       {joinState === "completed" ? (
         <div className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
           <p className="text-sm font-semibold text-emerald-900">
-            You&apos;re on {ssid}
+            {format(messages.secure.onSecureTitle, { ssid })}
           </p>
-          <p className="mt-1 text-xs text-emerald-800">
-            The network confirmed this device is now connected to the secure
-            network.
-          </p>
-          <ContinueLink destination={destination} />
+          <p className="mt-1 text-xs text-emerald-800">{messages.secure.onSecureBody}</p>
+          <ContinueLink destination={destination} messages={messages} />
         </div>
       ) : needsSafari ? (
         <SafariHandoff
@@ -311,6 +306,7 @@ export default function SecureSetup({
             setOpenPanel("manual");
             setFollowUp(null);
           }}
+          messages={messages}
         />
       ) : (
         <>
@@ -358,6 +354,7 @@ export default function SecureSetup({
           ssid={ssid}
           handheld={handheld}
           onManual={() => setOpenPanel("manual")}
+          messages={messages}
         />
       )}
 
@@ -371,29 +368,27 @@ export default function SecureSetup({
           copied={copied}
           onReveal={revealCredential}
           onCopy={copy}
+          messages={messages}
         />
       )}
 
       {joinState === "pending" && (
         <p className="mt-5 text-center text-xs text-slate-400">
-          Waiting for this device to appear on {ssid}…
+          {format(messages.secure.waiting, { ssid })}
         </p>
       )}
       {joinState === "exhausted" && (
         <p className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs leading-relaxed text-slate-600">
-          We stopped checking. If your device is set to use a private Wi-Fi
-          address, we can&apos;t confirm the switch from here — open your Wi-Fi
-          settings to see whether you&apos;re on {ssid}.
+          {format(messages.secure.exhausted, { ssid })}
         </p>
       )}
       {joinState === "unavailable" && (
         <p className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs leading-relaxed text-slate-600">
-          We can&apos;t confirm the switch from here. Open your Wi-Fi settings to
-          check whether you&apos;re on {ssid}.
+          {format(messages.secure.unknown, { ssid })}
         </p>
       )}
 
-      <ContinueLink destination={destination} />
+      <ContinueLink destination={destination} messages={messages} />
     </Card>
   );
 }
@@ -404,15 +399,21 @@ function Card({ children }: { children: React.ReactNode }) {
   return <div className="rounded-2xl bg-white p-6 shadow-md sm:p-8">{children}</div>;
 }
 
-function ContinueLink({ destination }: { destination: string | null }) {
+function ContinueLink({
+  destination,
+  messages,
+}: {
+  destination: string | null;
+  messages: Messages;
+}) {
   return (
     <p className="mt-6 text-center text-xs text-slate-400">
       {destination ? (
         <a className="text-blue-600 underline break-all" href={destination}>
-          Skip and continue to the internet
+          {messages.secure.skip}
         </a>
       ) : (
-        "You can close this page at any time — your guest access stays active."
+        messages.secure.closeAnyTime
       )}
     </p>
   );
@@ -438,10 +439,12 @@ function SafariHandoff({
   safariUrl,
   handoffUrl,
   onManual,
+  messages,
 }: {
   safariUrl: string;
   handoffUrl: string | null;
   onManual: () => void;
+  messages: Messages;
 }) {
   const [stalled, setStalled] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -469,10 +472,9 @@ function SafariHandoff({
   return (
     <div className="mt-5">
       <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
-        <p className="text-sm font-semibold text-amber-900">One step first</p>
+        <p className="text-sm font-semibold text-amber-900">{messages.handoff.title}</p>
         <p className="mt-1 text-xs leading-relaxed text-amber-800">
-          This Wi-Fi window can&apos;t install Wi-Fi settings. Open this page in
-          Safari to continue — you&apos;re already online, so it will load.
+          {messages.handoff.body}
         </p>
       </div>
 
@@ -481,13 +483,13 @@ function SafariHandoff({
         onClick={noteTap}
         className="mt-4 block w-full rounded-xl bg-blue-600 py-3 text-center text-sm font-semibold text-white transition-colors hover:bg-blue-700"
       >
-        Open in Safari
+        {messages.handoff.openInSafari}
       </a>
 
       {stalled && handoffUrl && (
         <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
           <p className="text-xs font-medium text-slate-900">
-            Didn&apos;t open? Copy this link into Safari.
+            {messages.handoff.stalledTitle}
           </p>
           <p className="mt-2 break-all rounded-lg border border-slate-200 bg-white p-2 font-mono text-[11px] text-slate-700">
             {handoffUrl}
@@ -497,10 +499,10 @@ function SafariHandoff({
             onClick={copyLink}
             className="mt-2 w-full rounded-lg border border-slate-300 py-2 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-100"
           >
-            {copied ? "Copied" : "Copy link"}
+            {copied ? messages.common.copied : messages.handoff.copyLink}
           </button>
           <p className="mt-2 text-[11px] leading-relaxed text-slate-500">
-            The link works once and expires in a few minutes.
+            {messages.handoff.linkNote}
           </p>
         </div>
       )}
@@ -510,10 +512,10 @@ function SafariHandoff({
         onClick={onManual}
         className="mt-3 w-full rounded-lg border border-slate-300 py-2 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-50"
       >
-        Manual Setup
+        {messages.methods.manualSetup}
       </button>
       <p className="mt-2 text-center text-[11px] text-slate-400">
-        Manual setup works right here, without leaving this window.
+        {messages.handoff.manualWorksHere}
       </p>
     </div>
   );
@@ -524,26 +526,28 @@ function QrPanel({
   ssid,
   handheld,
   onManual,
+  messages,
 }: {
   id: string;
   ssid: string;
   handheld: boolean;
   onManual: () => void;
+  messages: Messages;
 }) {
   return (
     <div className="mt-5 rounded-xl border border-slate-200 p-4 text-center">
-      <p className="text-sm font-semibold text-slate-900">Scan to join {ssid} securely</p>
+      <p className="text-sm font-semibold text-slate-900">
+        {format(messages.qr.title, { ssid })}
+      </p>
       <p className="mt-1 text-xs text-slate-500">
-        {handheld
-          ? "Scan this from the other device you want to connect."
-          : "Open the camera on the phone or tablet you want to connect."}
+        {handheld ? messages.qr.handheld : messages.qr.desktop}
       </p>
       {/* The credential is encoded inside the image, which is generated
           server-side and served `no-store`. It is never in this page's HTML. */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={`/api/v1/onboarding/sessions/${id}/qr`}
-        alt={`Wi-Fi QR code for ${ssid}`}
+        alt={format(messages.qr.alt, { ssid })}
         className="mx-auto mt-4 h-48 w-48"
       />
       <button
@@ -551,7 +555,7 @@ function QrPanel({
         onClick={onManual}
         className="mt-4 text-xs font-medium text-blue-600 underline"
       >
-        Can&apos;t scan? Manual setup
+        {messages.qr.cantScan}
       </button>
     </div>
   );
@@ -566,6 +570,7 @@ function ManualPanel({
   copied,
   onReveal,
   onCopy,
+  messages,
 }: {
   ssid: string;
   securityLabel: string;
@@ -575,13 +580,14 @@ function ManualPanel({
   copied: null | "ssid" | "passphrase";
   onReveal: () => void;
   onCopy: (value: string, what: "ssid" | "passphrase") => void;
+  messages: Messages;
 }) {
   return (
     <div className="mt-5 rounded-xl border border-slate-200 p-4">
-      <p className="text-sm font-semibold text-slate-900">Manual setup</p>
+      <p className="text-sm font-semibold text-slate-900">{messages.manual.title}</p>
       <dl className="mt-3 divide-y divide-slate-200 rounded-lg border border-slate-200 text-sm">
         <div className="flex items-center justify-between gap-3 px-3 py-2">
-          <dt className="text-slate-500">Network</dt>
+          <dt className="text-slate-500">{messages.manual.networkLabel}</dt>
           <dd className="flex items-center gap-2 font-medium text-slate-900">
             <span className="break-all">{ssid}</span>
             <button
@@ -589,16 +595,16 @@ function ManualPanel({
               onClick={() => onCopy(ssid, "ssid")}
               className="text-xs text-blue-600 underline"
             >
-              {copied === "ssid" ? "Copied" : "Copy"}
+              {copied === "ssid" ? messages.common.copied : messages.common.copy}
             </button>
           </dd>
         </div>
         <div className="flex items-center justify-between gap-3 px-3 py-2">
-          <dt className="text-slate-500">Security</dt>
+          <dt className="text-slate-500">{messages.manual.securityLabel}</dt>
           <dd className="font-medium text-slate-900">{securityLabel}</dd>
         </div>
         <div className="flex items-center justify-between gap-3 px-3 py-2">
-          <dt className="text-slate-500">Password</dt>
+          <dt className="text-slate-500">{messages.manual.passwordLabel}</dt>
           <dd className="flex items-center gap-2 text-right">
             {credential?.passphrase ? (
               <>
@@ -610,7 +616,7 @@ function ManualPanel({
                   onClick={() => onCopy(credential.passphrase!, "passphrase")}
                   className="text-xs text-blue-600 underline"
                 >
-                  {copied === "passphrase" ? "Copied" : "Copy"}
+                  {copied === "passphrase" ? messages.common.copied : messages.common.copy}
                 </button>
               </>
             ) : (
@@ -622,7 +628,7 @@ function ManualPanel({
                 disabled={pending}
                 className="rounded-lg border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 disabled:text-slate-400"
               >
-                {pending ? "Loading…" : "Show password"}
+                {pending ? messages.common.loading : messages.manual.showPassword}
               </button>
             )}
           </dd>
@@ -630,7 +636,7 @@ function ManualPanel({
       </dl>
       {error && <p className="mt-3 text-xs text-amber-700">{error}</p>}
       <p className="mt-3 text-xs leading-relaxed text-slate-500">
-        Open your Wi-Fi settings, choose {ssid}, and enter the password above.
+        {format(messages.manual.instructions, { ssid })}
       </p>
     </div>
   );

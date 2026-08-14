@@ -12,6 +12,7 @@ import {
   buildWindowsWlanProfile,
 } from "@/lib/onboarding/windowsProfile";
 import type { Platform } from "@/lib/onboarding/platform";
+import { routeLocale } from "@/lib/i18n/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,6 +29,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+  const { messages } = routeLocale(request);
   const guard = await guardOnboarding(request, id, { limit: 12 });
   if (guard instanceof NextResponse) return guard;
   const { record } = guard;
@@ -37,7 +39,7 @@ export async function GET(
     capabilities = await networkCapabilities();
   } catch (err) {
     log.warn("onboarding_network_unavailable", { name: (err as Error)?.name });
-    return jsonError(503, "secure_network_unavailable", "The secure network is unavailable.");
+    return jsonError(503, "secure_network_unavailable", messages.api.secureNetworkUnavailable);
   }
 
   const plan = planFor(record.platform as Platform, capabilities.network);
@@ -45,14 +47,14 @@ export async function GET(
     return jsonError(
       422,
       "method_not_supported",
-      "This device cannot use a Windows Wi-Fi profile. Use manual setup instead."
+      messages.api.methodNotSupportedWindows
     );
   }
 
   const provider = credentialProviderById(record.credentialProvider);
   if (!provider) {
     await markFailed(record, "unknown_credential_provider");
-    return jsonError(503, "provider_unavailable", "Secure Wi-Fi setup is unavailable.");
+    return jsonError(503, "provider_unavailable", messages.api.providerUnavailable);
   }
 
   let xml: string;
@@ -68,7 +70,7 @@ export async function GET(
       err instanceof CredentialUnavailableError ? "credential_unavailable" : "profile_generation_failed";
     log.error("onboarding_windows_profile_failed", { onboardingSessionId: record.id, reason });
     await markFailed(record, reason);
-    return jsonError(503, reason, "The Wi-Fi profile could not be prepared. Try manual setup instead.");
+    return jsonError(503, reason, messages.api.profileFailed);
   }
 
   await recordArtifact(record, "PROFILE_DOWNLOADED", "WINDOWS_PROFILE").catch((err) =>

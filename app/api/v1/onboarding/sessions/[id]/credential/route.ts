@@ -5,6 +5,7 @@ import { credentialProviderById } from "@/lib/onboarding/providers";
 import { CredentialUnavailableError } from "@/lib/onboarding/credentialProvider";
 import { markFailed, recordArtifact } from "@/lib/onboarding/service";
 import { NO_STORE_HEADERS, guardOnboarding, jsonError } from "@/lib/onboarding/routeGuards";
+import { routeLocale } from "@/lib/i18n/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,6 +28,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+  const { messages } = routeLocale(request);
   const guard = await guardOnboarding(request, id, { limit: 10 });
   if (guard instanceof NextResponse) return guard;
   const { record } = guard;
@@ -34,7 +36,7 @@ export async function POST(
   const provider = credentialProviderById(record.credentialProvider);
   if (!provider) {
     await markFailed(record, "unknown_credential_provider");
-    return jsonError(503, "provider_unavailable", "Secure Wi-Fi setup is unavailable.");
+    return jsonError(503, "provider_unavailable", messages.api.providerUnavailable);
   }
 
   let credential;
@@ -54,7 +56,7 @@ export async function POST(
     return jsonError(
       503,
       reason,
-      "The network details could not be retrieved. Please contact the network administrator."
+      messages.api.credentialFailed
     );
   }
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { methodAllowed, planFor } from "@/lib/onboarding/methods";
+import { describePlan, methodAllowed, planFor } from "@/lib/onboarding/methods";
+import { en } from "@/lib/i18n/locales/en";
 import type { SecureNetwork } from "@/lib/onboarding/credentialProvider";
 
 const wpa2: SecureNetwork = {
@@ -13,7 +14,7 @@ const wpa2: SecureNetwork = {
 const wpa3: SecureNetwork = { ...wpa2, security: "wpa3-sae", securityLabel: "WPA3 Personal" };
 
 const primaryOf = (platform: Parameters<typeof planFor>[0], network = wpa2) =>
-  planFor(platform, network).options.find((option) => option.primary)?.id;
+  planFor(platform, network).entries.find((entry) => entry.primary)?.id;
 
 describe("planFor", () => {
   it("gives Apple devices the configuration profile as the primary action", () => {
@@ -53,7 +54,7 @@ describe("planFor", () => {
   it("gives an unknown platform a usable plan rather than nothing", () => {
     const plan = planFor("OTHER", wpa2);
     expect(plan.unsupportedReason).toBeNull();
-    expect(plan.options.length).toBeGreaterThan(0);
+    expect(plan.entries.length).toBeGreaterThan(0);
   });
 
   it("withdraws QR and the Apple profile on a WPA3-only network", () => {
@@ -67,14 +68,14 @@ describe("planFor", () => {
 
   it("labels exactly one option as primary on every platform", () => {
     for (const platform of ["IOS", "IPADOS", "ANDROID", "MACOS", "WINDOWS", "OTHER"] as const) {
-      const primaries = planFor(platform, wpa2).options.filter((o) => o.primary);
+      const primaries = planFor(platform, wpa2).entries.filter((o) => o.primary);
       expect(primaries).toHaveLength(1);
     }
   });
 
   it("calls the primary action Set Up Secure Wi-Fi whatever it resolves to", () => {
     for (const platform of ["IOS", "IPADOS", "ANDROID", "MACOS", "WINDOWS", "OTHER"] as const) {
-      const primary = planFor(platform, wpa2).options.find((o) => o.primary);
+      const primary = describePlan(planFor(platform, wpa2), en, wpa2).find((o) => o.primary);
       expect(primary?.label).toBe("Set Up Secure Wi-Fi");
     }
   });

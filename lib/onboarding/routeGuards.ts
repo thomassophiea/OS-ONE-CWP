@@ -16,6 +16,7 @@ import { allowedHosts } from "@/lib/env";
 import { hostIsAllowed } from "@/lib/request/getRequestMetadata";
 import { ONBOARDING_COOKIE } from "@/lib/onboarding/token";
 import { authorizeOnboarding } from "@/lib/onboarding/service";
+import { routeLocale } from "@/lib/i18n/server";
 
 /** Headers for anything whose body is, or reveals, credential material. */
 export const NO_STORE_HEADERS = {
@@ -82,22 +83,20 @@ export async function guardOnboarding(
     return new NextResponse("Not found", { status: 404 });
   }
 
+  const { messages } = routeLocale(request);
+
   const token = request.cookies.get(ONBOARDING_COOKIE)?.value ?? null;
   if (!token) {
-    return jsonError(401, "no_onboarding_session", "This secure setup session has ended.");
+    return jsonError(401, "no_onboarding_session", messages.api.noOnboardingSession);
   }
 
   if (!rateLimit(`${id}:${request.nextUrl.pathname}`, limit)) {
-    return jsonError(429, "rate_limited", "Too many requests. Wait a moment and try again.");
+    return jsonError(429, "rate_limited", messages.api.rateLimited);
   }
 
   const record = await authorizeOnboarding(id, token);
   if (!record) {
-    return jsonError(
-      404,
-      "onboarding_unavailable",
-      "This secure setup session has expired. Reconnect to the guest network to start again."
-    );
+    return jsonError(404, "onboarding_unavailable", messages.api.onboardingUnavailable);
   }
 
   return { record };

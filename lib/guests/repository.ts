@@ -17,6 +17,12 @@ import type {
   Prisma,
 } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { GUEST_FIELD_CATALOGUE } from "@/lib/guestFields/registry";
+import {
+  forLedgerPersistence,
+  PERSISTENCE_PROHIBITED,
+  type PersistencePolicy,
+} from "@/lib/privacy/policy";
 import { canonicalMac } from "@/lib/guests/mac";
 
 /** The status callers should act on, given the clock. */
@@ -416,12 +422,42 @@ export async function touchGuestSeen(
  * stands, and AURA's revoke path is what removes it from the gateway.
  */
 export async function recordAuthorizedGuest(
-  input: PortalObservation
+  input: PortalObservation & {
+    /**
+     * Whether this guest permits personal data to be written.
+     *
+     * Passed in rather than looked up so the decision travels with the write,
+     * and so this function cannot be called without the caller having thought
+     * about it. Omitted means prohibited — the safe default for a control whose
+     * failure mode is storing something a guest asked us not to.
+     */
+    policy?: PersistencePolicy;
+    /** Guest-supplied values, keyed by registry id. */
+    guestFields?: Record<string, string> | null;
+  }
 ): Promise<GuestAuthorization | null> {
   const macAddress = canonicalMac(input.macAddress);
   if (!macAddress) return null;
   const now = input.now ?? new Date();
+  const policy = input.policy ?? PERSISTENCE_PROHIBITED;
+
+  // Operational context — which WLAN, which AP, which session. This is how the
+  // network works and is kept regardless; it is not what the guest told us
+  // about themselves.
   const context = observationContext(input);
+
+  // Personal columns, mapped from the registry so a new field with a
+  // `ledgerColumn` lands here without this function changing. Stripped wholesale
+  // when the guest prohibited storage: the row is still created, because it is
+  // the standing record of which *device* may use the network and is what
+  // revocation acts on — it simply carries nobody's name.
+  const personal = forLedgerPersistence(
+    policy,
+    Object.fromEntries(
+      GUEST_FIELD_CATALOGUE.filter((f) => f.ledgerColumn && input.guestFields?.[f.id])
+        .map((f) => [f.ledgerColumn as string, input.guestFields![f.id]])
+    )
+  );
 
   const existing = await prisma.guestAuthorization.findUnique({ where: { macAddress } });
   if (existing?.status === "REVOKED") return existing;
@@ -436,6 +472,7 @@ export async function recordAuthorizedGuest(
         lastSeen: now,
         authorizedAt: now,
         ...context,
+        ...personal,
       },
     });
   }
@@ -452,6 +489,7 @@ export async function recordAuthorizedGuest(
         ? { status: "ACTIVE" as const, expiresAt: null }
         : {}),
       ...context,
+      ...personal,
     },
   });
 }

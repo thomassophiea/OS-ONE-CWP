@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { log } from "@/lib/log";
 import { SESSION_COOKIE, readSessionCookie } from "@/lib/session/cookie";
 import { isExpired } from "@/lib/session/repository";
+import { requestLocale } from "@/lib/i18n/server";
+import LanguagePicker from "@/app/LanguagePicker";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,6 +26,7 @@ export const dynamic = "force-dynamic";
 export default async function PortalEntryPage() {
   const jar = await cookies();
   const sessionId = readSessionCookie(jar.get(SESSION_COOKIE)?.value);
+  const { locale, definition, messages } = await requestLocale();
 
   if (sessionId) {
     let session = null;
@@ -42,17 +45,19 @@ export default async function PortalEntryPage() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-md w-full max-w-md p-8 text-center">
-        <h1 className="text-2xl font-bold text-slate-900 mb-2">Guest Wi-Fi</h1>
-        <p className="text-sm text-slate-600 leading-relaxed">
-          To get online, open any web page in your browser. You&apos;ll be brought
-          straight back here to accept the terms.
-        </p>
-        <p className="mt-4 text-sm text-slate-500 leading-relaxed">
-          If nothing happens, disconnect from the Wi-Fi network and reconnect.
-        </p>
-        <p className="mt-8 text-xs text-slate-400">OS-ONE-CWP</p>
+    <main
+      className="min-h-screen bg-slate-50 flex items-center justify-center p-4"
+      lang={locale}
+      dir={definition.dir}
+    >
+      <div className="bg-white rounded-2xl shadow-md w-full max-w-md p-8">
+        <LanguagePicker current={locale} label={messages.common.languageLabel} />
+        <div className="mt-4 text-center">
+          <h1 className="text-2xl font-bold text-slate-900 mb-2">{messages.entry.title}</h1>
+          <p className="text-sm text-slate-600 leading-relaxed">{messages.entry.body}</p>
+          <p className="mt-4 text-sm text-slate-500 leading-relaxed">{messages.entry.hint}</p>
+          <p className="mt-8 text-xs text-slate-400">{messages.common.portalName}</p>
+        </div>
       </div>
     </main>
   );

@@ -8,6 +8,7 @@ import { markFailed, recordArtifact } from "@/lib/onboarding/service";
 import { NO_STORE_HEADERS, guardOnboarding, jsonError } from "@/lib/onboarding/routeGuards";
 import { QR_CONTENT_TYPE, buildWifiQrSvg } from "@/lib/onboarding/wifiQr";
 import type { Platform } from "@/lib/onboarding/platform";
+import { routeLocale } from "@/lib/i18n/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,6 +26,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+  const { messages } = routeLocale(request);
   const guard = await guardOnboarding(request, id, { limit: 20 });
   if (guard instanceof NextResponse) return guard;
   const { record } = guard;
@@ -34,7 +36,7 @@ export async function GET(
     capabilities = await networkCapabilities();
   } catch (err) {
     log.warn("onboarding_network_unavailable", { name: (err as Error)?.name });
-    return jsonError(503, "secure_network_unavailable", "The secure network is unavailable.");
+    return jsonError(503, "secure_network_unavailable", messages.api.secureNetworkUnavailable);
   }
 
   const plan = planFor(record.platform as Platform, capabilities.network);
@@ -42,14 +44,14 @@ export async function GET(
     return jsonError(
       422,
       "method_not_supported",
-      "A Wi-Fi QR code cannot be used for this network. Use manual setup instead."
+      messages.api.methodNotSupportedQr
     );
   }
 
   const provider = credentialProviderById(record.credentialProvider);
   if (!provider) {
     await markFailed(record, "unknown_credential_provider");
-    return jsonError(503, "provider_unavailable", "Secure Wi-Fi setup is unavailable.");
+    return jsonError(503, "provider_unavailable", messages.api.providerUnavailable);
   }
 
   let svg: string;
@@ -65,7 +67,7 @@ export async function GET(
       err instanceof CredentialUnavailableError ? "credential_unavailable" : "qr_generation_failed";
     log.error("onboarding_qr_failed", { onboardingSessionId: record.id, reason });
     await markFailed(record, reason);
-    return jsonError(503, reason, "The QR code could not be prepared. Try manual setup instead.");
+    return jsonError(503, reason, messages.api.qrFailed);
   }
 
   await recordArtifact(record, "QR_DISPLAYED", "WIFI_QR").catch((err) =>

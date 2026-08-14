@@ -12,6 +12,7 @@ import {
   buildAppleWifiProfile,
 } from "@/lib/onboarding/appleProfile";
 import type { Platform } from "@/lib/onboarding/platform";
+import { routeLocale } from "@/lib/i18n/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -34,6 +35,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+  const { messages } = routeLocale(request);
   const guard = await guardOnboarding(request, id, { limit: 12 });
   if (guard instanceof NextResponse) return guard;
   const { record } = guard;
@@ -43,7 +45,7 @@ export async function GET(
     capabilities = await networkCapabilities();
   } catch (err) {
     log.warn("onboarding_network_unavailable", { name: (err as Error)?.name });
-    return jsonError(503, "secure_network_unavailable", "The secure network is unavailable.");
+    return jsonError(503, "secure_network_unavailable", messages.api.secureNetworkUnavailable);
   }
 
   const plan = planFor(record.platform as Platform, capabilities.network);
@@ -51,14 +53,14 @@ export async function GET(
     return jsonError(
       422,
       "method_not_supported",
-      "This device cannot use a Wi-Fi configuration profile. Use manual setup instead."
+      messages.api.methodNotSupportedProfile
     );
   }
 
   const provider = credentialProviderById(record.credentialProvider);
   if (!provider) {
     await markFailed(record, "unknown_credential_provider");
-    return jsonError(503, "provider_unavailable", "Secure Wi-Fi setup is unavailable.");
+    return jsonError(503, "provider_unavailable", messages.api.providerUnavailable);
   }
 
   let profile: string;
@@ -81,7 +83,7 @@ export async function GET(
     return jsonError(
       503,
       reason,
-      "The Wi-Fi setup file could not be prepared. Try manual setup instead."
+      messages.api.profileFailed
     );
   }
 

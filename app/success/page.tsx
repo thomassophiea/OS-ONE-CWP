@@ -7,6 +7,8 @@ import { audit } from "@/lib/session/repository";
 import { normalizeMac } from "@/lib/captive/extractSessionFields";
 import { recordAuthorizedGuest } from "@/lib/guests/repository";
 import { toAbsoluteDestination } from "@/lib/captive/safeRedirect";
+import { requestLocale } from "@/lib/i18n/server";
+import { policyFor } from "@/lib/privacy/policy";
 import ForwardToDestination from "./ForwardToDestination";
 
 export const runtime = "nodejs";
@@ -27,6 +29,7 @@ export default async function SuccessPage({
 }) {
   const { s } = await searchParams;
   const jar = await cookies();
+  const { locale, definition, messages } = await requestLocale();
   const cookieSessionId = readSessionCookie(jar.get(SESSION_COOKIE)?.value);
 
   // The id in the URL is echoed back to us by the gateway, so it is never
@@ -77,6 +80,10 @@ export default async function SuccessPage({
           apName: session.apName,
           apSerial: session.apSerial,
           sessionId: session.id,
+          // The ledger row records which *device* may use the network, which is
+          // operational. Whether it may also carry who the device belongs to is
+          // this guest's decision, and it travels with the write.
+          policy: policyFor(session),
         }).catch((err) => log.error("success_guest_record_failed", { err }));
       }
     } catch (err) {
@@ -101,7 +108,11 @@ export default async function SuccessPage({
   const destination = toAbsoluteDestination(session?.sanitizedDest);
 
   return (
-    <main className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+    <main
+      className="min-h-screen bg-slate-50 flex items-center justify-center p-4"
+      lang={locale}
+      dir={definition.dir}
+    >
       <div className="bg-white rounded-2xl shadow-md w-full max-w-md p-8 text-center">
         <div className="mb-4 text-emerald-500" aria-hidden="true">
           <svg
@@ -119,31 +130,35 @@ export default async function SuccessPage({
           </svg>
         </div>
 
-        <h1 className="text-2xl font-bold text-slate-900 mb-2">You&apos;re connected</h1>
+        <h1 className="text-2xl font-bold text-slate-900 mb-2">{messages.success.title}</h1>
         <p className="text-slate-500 text-sm mb-6">
-          {destination
-            ? "Taking you back to where you left off…"
-            : "Your device now has network access."}
+          {destination ? messages.success.forwarding : messages.success.connected}
         </p>
 
         {session && (
           <dl className="text-left rounded-lg bg-slate-50 border border-slate-200 divide-y divide-slate-200 text-sm">
-            <Row label="Network" value={session.ssid} />
+            <Row label={messages.success.networkLabel} value={session.ssid} />
             <Row
-              label="Device"
+              label={messages.success.deviceLabel}
               value={session.clientMac ? normalizeMac(session.clientMac) : null}
             />
             <Row
-              label="Authorized"
+              label={messages.success.authorizedLabel}
               value={session.authorizedAt?.toISOString() ?? null}
             />
-            <Row label="Session" value={session.id} mono />
+            <Row label={messages.success.sessionLabel} value={session.id} mono />
           </dl>
         )}
 
-        {destination && <ForwardToDestination url={destination} />}
+        {destination && (
+          <ForwardToDestination
+            url={destination}
+            continuingIn={messages.success.continuingIn}
+            goNow={messages.success.goNow}
+          />
+        )}
 
-        <p className="mt-6 text-xs text-slate-400">OS-ONE-CWP</p>
+        <p className="mt-6 text-xs text-slate-400">{messages.common.portalName}</p>
       </div>
     </main>
   );

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { log } from "@/lib/log";
 import {
@@ -25,6 +26,9 @@ import {
   consentChallengeMatches,
 } from "@/lib/session/cookie";
 import { audit, isExpired } from "@/lib/session/repository";
+import { configuredGuestFields } from "@/lib/guestFields/registry";
+import { validateGuestFields } from "@/lib/guestFields/validate";
+import { auditablePolicy, policyFromConsent } from "@/lib/privacy/policy";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -80,6 +84,11 @@ export async function POST(request: NextRequest) {
   // "secure" is the open path, so a missing, unknown or forged value degrades to
   // the behaviour that existed before this field did.
   let secureRequested = false;
+  // The storage prohibition, as submitted. Read here and decided here — the
+  // browser can hide inputs or omit this field entirely, so what the *server*
+  // records is what every later component reads.
+  let doNotStore = false;
+  const rawFields: Record<string, string | undefined> = {};
   try {
     const form = await request.formData();
     submittedCsrf = form.get("csrfToken")?.toString() ?? null;
@@ -87,9 +96,17 @@ export async function POST(request: NextRequest) {
     interaction = form.get("interaction")?.toString() ?? null;
     dwellMs = Number(form.get("dwellMs")?.toString() ?? "0");
     secureRequested = form.get("mode")?.toString() === "secure";
+    doNotStore = form.get("doNotStorePersonalData")?.toString() === "yes";
+    // Only the configured fields are read off the form. An extra input a client
+    // invents is never looked at, so it cannot become a stored value.
+    for (const field of configuredGuestFields()) {
+      rawFields[field.id] = form.get(field.id)?.toString();
+    }
   } catch {
     return fail(base, "bad_request");
   }
+
+  const policy = policyFromConsent(doNotStore);
 
   let session;
   try {
@@ -159,6 +176,21 @@ export async function POST(request: NextRequest) {
       userAgent: request.headers.get("user-agent"),
     });
     return fail(base, "consent");
+  }
+
+  // Validation runs server-side against the registry. A guest who typed a
+  // malformed email is sent back with the message in their own language and
+  // their other answers intact — carried in the redirect, never in storage.
+  const configured = configuredGuestFields();
+  const validation = validateGuestFields(configured, rawFields);
+  if (validation.errors.length > 0) {
+    await audit(session.id, "ACCEPT_FIELDS_INVALID", "warn", {
+      clientMac: session.clientMac,
+      // Which fields failed and why — never what was in them.
+      invalidFields: validation.errors.map((e) => `${e.fieldId}:${e.messageKey}`),
+      ...auditablePolicy(policy),
+    });
+    return failValidation(base, validation.errors, validation.values, policy.personalDataAllowed);
   }
 
   if (isExpired(session)) {
@@ -239,6 +271,17 @@ export async function POST(request: NextRequest) {
         status: "ACCEPTED",
         acceptedTerms: true,
         acceptedAt: now,
+        // The prohibition, recorded once and read by everything downstream.
+        personalDataAllowed: policy.personalDataAllowed,
+        privacyChoiceAt: now,
+        // The enforcement itself: when persistence is refused, the column is
+        // set to null rather than written and cleaned up later. The values the
+        // guest typed exist only in this request's memory and are discarded
+        // with it — they are never in Postgres, a WAL segment, or a replica.
+        guestFields:
+          policy.personalDataAllowed && Object.keys(validation.values).length > 0
+            ? validation.values
+            : Prisma.DbNull,
         // Recorded here, acted on at /success. The authorization itself — the
         // signed approval URL above, the gateway callback, the role change —
         // is identical either way, which is what keeps the secure option from
@@ -265,6 +308,10 @@ export async function POST(request: NextRequest) {
     approvalScheme: session.gatewayPort === "80" ? "http" : "https",
     destForwarded: Boolean(session.sanitizedDest),
     workflow: secureRequested ? "secure" : "open",
+    ...auditablePolicy(policy),
+    // How many values were kept, never which or what. Zero under a prohibition
+    // is the assertion that matters, and it is checkable from the audit trail.
+    guestFieldsStored: policy.personalDataAllowed ? Object.keys(validation.values).length : 0,
     viaOsAssistant,
     durationMs: Date.now() - startedAt,
   });
@@ -277,5 +324,31 @@ export async function POST(request: NextRequest) {
 function fail(base: string, code: string) {
   const url = new URL("/portal/error", base);
   url.searchParams.set("code", code);
+  return NextResponse.redirect(url, 303);
+}
+
+/**
+ * Send the guest back to the form with their answers and the reasons.
+ *
+ * Values ride in the query string of a redirect the guest's own browser
+ * follows — they are not written anywhere, which is what lets this work
+ * identically under a storage prohibition.
+ *
+ * Under a prohibition they are omitted entirely: a URL ends up in history and
+ * in the address bar, and "do not store my personal data" is a poor fit with
+ * putting it there. The cost is retyping; the alternative is honouring the
+ * prohibition everywhere except the one place a guest can see.
+ */
+function failValidation(
+  base: string,
+  errors: { fieldId: string; messageKey: string }[],
+  values: Record<string, string>,
+  mayEcho: boolean
+) {
+  const url = new URL("/portal/consent", base);
+  url.searchParams.set("invalid", errors.map((e) => `${e.fieldId}:${e.messageKey}`).join(","));
+  if (mayEcho) {
+    for (const [id, value] of Object.entries(values)) url.searchParams.set(`v_${id}`, value);
+  }
   return NextResponse.redirect(url, 303);
 }

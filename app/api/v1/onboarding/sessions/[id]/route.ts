@@ -5,6 +5,7 @@ import { networkCapabilities } from "@/lib/onboarding/providers/skynet";
 import { toOnboardingView } from "@/lib/onboarding/serialize";
 import { NO_STORE_HEADERS, guardOnboarding, jsonError } from "@/lib/onboarding/routeGuards";
 import type { Platform } from "@/lib/onboarding/platform";
+import { routeLocale } from "@/lib/i18n/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,6 +16,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+  const { messages } = routeLocale(request);
   const guard = await guardOnboarding(request, id, { limit: 60 });
   if (guard instanceof NextResponse) return guard;
 
@@ -26,13 +28,13 @@ export async function GET(
     return jsonError(
       503,
       "secure_network_unavailable",
-      "The secure network's details could not be read. Please try again shortly."
+      messages.api.networkUnavailable
     );
   }
 
   const plan = planFor(guard.record.platform as Platform, capabilities.network);
   return NextResponse.json(
-    { onboarding: toOnboardingView(guard.record, capabilities.network, plan) },
+    { onboarding: toOnboardingView(guard.record, capabilities.network, plan, messages) },
     { headers: NO_STORE_HEADERS }
   );
 }

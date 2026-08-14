@@ -14,6 +14,7 @@ import { planFor } from "@/lib/onboarding/methods";
 import { networkCapabilities, secureOnboardingConfigured } from "@/lib/onboarding/providers/skynet";
 import { createOnboarding } from "@/lib/onboarding/service";
 import { toOnboardingView } from "@/lib/onboarding/serialize";
+import { routeLocale } from "@/lib/i18n/server";
 import {
   NO_STORE_HEADERS,
   jsonError,
@@ -40,6 +41,8 @@ export const dynamic = "force-dynamic";
  * It never carries credential material; that has its own endpoint.
  */
 export async function POST(request: NextRequest) {
+  const { messages } = routeLocale(request);
+
   if (!hostIsAllowed(request.headers.get("host"), allowedHosts())) {
     return new NextResponse("Not found", { status: 404 });
   }
@@ -48,17 +51,17 @@ export async function POST(request: NextRequest) {
     return jsonError(
       503,
       "secure_onboarding_unavailable",
-      "Secure Wi-Fi setup is not available on this network."
+      messages.api.secureUnavailable
     );
   }
 
   const sessionId = readSessionCookie(request.cookies.get(SESSION_COOKIE)?.value);
   if (!sessionId) {
-    return jsonError(401, "no_session", "Your guest session has ended. Reconnect to start again.");
+    return jsonError(401, "no_session", messages.api.sessionEnded);
   }
 
   if (!rateLimit(`create:${sessionId}`, 10)) {
-    return jsonError(429, "rate_limited", "Too many requests. Wait a moment and try again.");
+    return jsonError(429, "rate_limited", messages.api.rateLimited);
   }
 
   let session;
@@ -66,10 +69,10 @@ export async function POST(request: NextRequest) {
     session = await prisma.guestSession.findUnique({ where: { id: sessionId } });
   } catch (err) {
     log.error("onboarding_create_session_lookup_failed", { err });
-    return jsonError(503, "unavailable", "Secure setup is temporarily unavailable.");
+    return jsonError(503, "unavailable", messages.api.temporarilyUnavailable);
   }
   if (!session || isExpired(session)) {
-    return jsonError(401, "no_session", "Your guest session has ended. Reconnect to start again.");
+    return jsonError(401, "no_session", messages.api.sessionEnded);
   }
 
   // The gateway confirms authorization by sending the browser to /success,
@@ -80,7 +83,7 @@ export async function POST(request: NextRequest) {
     return jsonError(
       409,
       "not_authorized",
-      "Finish connecting to the guest network before setting up secure Wi-Fi."
+      messages.api.notAuthorized
     );
   }
 
@@ -107,7 +110,7 @@ export async function POST(request: NextRequest) {
     return jsonError(
       503,
       "secure_network_unavailable",
-      "The secure network's details could not be read. Please try again shortly."
+      messages.api.networkUnavailable
     );
   }
 
@@ -116,7 +119,7 @@ export async function POST(request: NextRequest) {
     return jsonError(
       422,
       "unsupported_platform",
-      "Secure Wi-Fi setup is not supported on this device. You can still use the guest network."
+      messages.api.unsupportedPlatform
     );
   }
 
@@ -133,12 +136,12 @@ export async function POST(request: NextRequest) {
     });
   } catch (err) {
     log.error("onboarding_create_failed", { err });
-    return jsonError(503, "unavailable", "Secure setup is temporarily unavailable.");
+    return jsonError(503, "unavailable", messages.api.temporarilyUnavailable);
   }
 
   const response = NextResponse.json(
     {
-      onboarding: toOnboardingView(created.record, capabilities.network, plan),
+      onboarding: toOnboardingView(created.record, capabilities.network, plan, messages),
       captiveAssistant: verdict.captiveAssistant,
     },
     { status: 201, headers: NO_STORE_HEADERS }

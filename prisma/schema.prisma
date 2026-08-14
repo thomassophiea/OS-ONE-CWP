@@ -170,6 +170,27 @@ model GuestSession {
   /// Source address the hand-off was redeemed from, for audit only.
   handoffUsedIp    String?
 
+  // ---- privacy ----
+  /// Whether personal data from this guest may be written to storage.
+  ///
+  /// Set from the consent form and never afterwards. `false` means the guest
+  /// ticked "Do not store my personal data", which this application treats as a
+  /// prohibition rather than a preference: personal values are stripped before
+  /// a write is issued, not deleted afterwards.
+  ///
+  /// Defaults to true so that every pre-existing row keeps its current meaning.
+  personalDataAllowed Boolean   @default(true)
+  /// When the guest made that choice. The choice itself is a compliance record
+  /// and is not personal data; the values it protects are.
+  privacyChoiceAt     DateTime?
+
+  /// Guest-supplied field values, keyed by registry id.
+  ///
+  /// Written **only** when `personalDataAllowed` is true. When it is false this
+  /// column is never populated — the values are used for the duration of the
+  /// request and discarded, so the prohibited data is never in Postgres at all.
+  guestFields Json?
+
   // ---- CAPPORT (RFC 8908) ----
   /// SHA-256 of this session's Captive Portal API token.
   ///

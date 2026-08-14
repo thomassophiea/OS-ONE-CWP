@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { format } from "@/lib/i18n";
 
 /**
  * Sends the guest on to the page they were originally trying to open.
@@ -10,7 +11,16 @@ import { useEffect, useState } from "react";
  * and the visible link is the fallback for anyone with JavaScript disabled or a
  * captive-portal assistant that blocks navigation.
  */
-export default function ForwardToDestination({ url }: { url: string }) {
+export default function ForwardToDestination({
+  url,
+  continuingIn,
+  goNow,
+}: {
+  url: string;
+  /** Localised template containing `{seconds}`. */
+  continuingIn: string;
+  goNow: string;
+}) {
   const [seconds, setSeconds] = useState(3);
 
   useEffect(() => {
@@ -26,9 +36,9 @@ export default function ForwardToDestination({ url }: { url: string }) {
 
   return (
     <p className="mt-6 text-xs text-slate-500">
-      Continuing in {seconds}s —{" "}
+      {format(continuingIn, { seconds })} —{" "}
       <a className="text-blue-600 underline break-all" href={url}>
-        go now
+        {goNow}
       </a>
     </p>
   );

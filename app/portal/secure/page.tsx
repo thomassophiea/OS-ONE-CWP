@@ -11,6 +11,9 @@ import {
   secureOnboardingConfigured,
 } from "@/lib/onboarding/providers/skynet";
 import { issueHandoffToken } from "@/lib/onboarding/handoff";
+import { requestLocale } from "@/lib/i18n/server";
+import { format, type Messages } from "@/lib/i18n";
+import LanguagePicker from "@/app/LanguagePicker";
 import SecureSetup from "./SecureSetup";
 
 export const runtime = "nodejs";
@@ -31,6 +34,7 @@ export const dynamic = "force-dynamic";
 export default async function SecurePage() {
   const jar = await cookies();
   const sessionId = readSessionCookie(jar.get(SESSION_COOKIE)?.value);
+  const { locale, definition, messages } = await requestLocale();
   if (!sessionId) redirect("/portal/error?code=no_session");
 
   let session;
@@ -96,8 +100,16 @@ export default async function SecurePage() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 flex items-start justify-center p-4 py-8">
+    <main
+      className="min-h-screen bg-slate-50 flex items-start justify-center p-4 py-8"
+      lang={locale}
+      dir={definition.dir}
+    >
       <div className="w-full max-w-md space-y-4">
+        <div className="rounded-2xl bg-white px-4 py-2 shadow-sm">
+          <LanguagePicker current={locale} label={messages.common.languageLabel} />
+        </div>
+
         {/* Said first and said plainly: the guest is already online. Secure
             setup is optional and everything below it can be abandoned. */}
         <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 flex items-start gap-3">
@@ -112,19 +124,25 @@ export default async function SecurePage() {
             </svg>
           </span>
           <div>
-            <p className="text-sm font-semibold text-emerald-900">You&apos;re connected</p>
+            <p className="text-sm font-semibold text-emerald-900">
+              {messages.secure.connectedTitle}
+            </p>
             <p className="text-xs text-emerald-800 mt-0.5">
               {session.ssid
-                ? `You have internet access on ${session.ssid}.`
-                : "You have internet access on the guest network."}
+                ? format(messages.secure.connectedOn, { ssid: session.ssid })
+                : messages.secure.connectedGeneric}
             </p>
           </div>
         </div>
 
         {network ? (
           <SecureSetup
+            messages={messages}
             ssid={network.ssid}
-            securityLabel={network.securityLabel}
+            securityLabel={
+              messages.security[network.security as keyof Messages["security"]] ??
+              network.securityLabel
+            }
             destination={destination}
             safariUrl={safariUrl}
             handoffUrl={handoffUrl}
@@ -132,24 +150,21 @@ export default async function SecurePage() {
         ) : (
           <div className="rounded-2xl bg-white shadow-md p-8 text-center">
             <h1 className="text-lg font-bold text-slate-900">
-              Secure Wi-Fi setup is unavailable
+              {messages.secure.unavailableTitle}
             </h1>
-            <p className="mt-2 text-sm text-slate-500">
-              We couldn&apos;t reach the secure network&apos;s configuration. Your
-              guest access is unaffected.
-            </p>
+            <p className="mt-2 text-sm text-slate-500">{messages.secure.unavailableBody}</p>
             {destination && (
               <a
                 className="mt-6 inline-block text-sm text-blue-600 underline break-all"
                 href={destination}
               >
-                Continue to the internet
+                {messages.secure.continueToInternet}
               </a>
             )}
           </div>
         )}
 
-        <p className="text-center text-xs text-slate-400">OS-ONE-CWP</p>
+        <p className="text-center text-xs text-slate-400">{messages.common.portalName}</p>
       </div>
     </main>
   );
