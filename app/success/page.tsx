@@ -84,6 +84,11 @@ export default async function SuccessPage({
           // operational. Whether it may also carry who the device belongs to is
           // this guest's decision, and it travels with the write.
           policy: policyFor(session),
+          // Read back from the session rather than re-parsed from the form: if
+          // the guest prohibited storage this column is null, so there is
+          // nothing here to strip — the prohibition has already taken effect
+          // one step earlier, which is exactly where it should.
+          guestFields: (session.guestFields as Record<string, string> | null) ?? null,
         }).catch((err) => log.error("success_guest_record_failed", { err }));
       }
     } catch (err) {
