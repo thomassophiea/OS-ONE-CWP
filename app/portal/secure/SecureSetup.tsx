@@ -62,11 +62,15 @@ export default function SecureSetup({
   securityLabel,
   destination,
   safariUrl,
+  handoffUrl,
 }: {
   ssid: string;
   securityLabel: string;
   destination: string | null;
+  /** `x-safari-https://…` hand-off, present only inside a captive assistant. */
   safariUrl: string | null;
+  /** The same link as plain https, for copying when the scheme does nothing. */
+  handoffUrl: string | null;
 }) {
   const [phase, setPhase] = useState<Phase>("loading");
   const [view, setView] = useState<OnboardingView | null>(null);
@@ -302,6 +306,7 @@ export default function SecureSetup({
       ) : needsSafari ? (
         <SafariHandoff
           safariUrl={safariUrl!}
+          handoffUrl={handoffUrl}
           onManual={() => {
             setOpenPanel("manual");
             setFollowUp(null);
@@ -414,28 +419,92 @@ function ContinueLink({ destination }: { destination: string | null }) {
 }
 
 /**
- * The way out of iOS's Captive Network Assistant.
+ * The way out of the OS captive-portal window.
  *
- * `x-safari-https://…` is the scheme that opens a URL in full Safari from an
- * embedded webview. It is not guaranteed — so the plain link is offered
- * underneath it, and manual setup, which needs neither, is offered beside it.
+ * Two things have to happen and only one of them is the URL scheme.
+ * `x-safari-https://…` asks the system to open the link in Safari — registered
+ * on both iOS and macOS, so it does open. What it opens is a browser with a
+ * *different cookie store*, which is why the link carries a single-use
+ * hand-off token: without it the new browser has no session and shows "Your
+ * session has ended", which is exactly what happened before this existed.
+ *
+ * The scheme is not guaranteed to fire on every build, and a link that silently
+ * does nothing is worse than no link. So the page watches: if it is still
+ * visible a moment after the tap, the plain https link is revealed to copy into
+ * Safari by hand. Manual setup sits alongside throughout, because it needs
+ * neither Safari nor Settings and therefore works inside the assistant.
  */
-function SafariHandoff({ safariUrl, onManual }: { safariUrl: string; onManual: () => void }) {
+function SafariHandoff({
+  safariUrl,
+  handoffUrl,
+  onManual,
+}: {
+  safariUrl: string;
+  handoffUrl: string | null;
+  onManual: () => void;
+}) {
+  const [stalled, setStalled] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  // Leaving for another app hides this page. Still visible after a beat means
+  // the hand-off did not take, and the guest needs the manual route.
+  const noteTap = useCallback(() => {
+    window.setTimeout(() => {
+      if (document.visibilityState === "visible") setStalled(true);
+    }, 2500);
+  }, []);
+
+  const copyLink = useCallback(async () => {
+    if (!handoffUrl) return;
+    try {
+      await navigator.clipboard.writeText(handoffUrl);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard access is refused in some captive webviews. The link is on
+      // screen and selectable, so this needs no error message.
+    }
+  }, [handoffUrl]);
+
   return (
     <div className="mt-5">
       <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
         <p className="text-sm font-semibold text-amber-900">One step first</p>
         <p className="mt-1 text-xs leading-relaxed text-amber-800">
-          This window can&apos;t install Wi-Fi settings. Open this page in Safari
-          to continue — you&apos;re already online, so it will load.
+          This Wi-Fi window can&apos;t install Wi-Fi settings. Open this page in
+          Safari to continue — you&apos;re already online, so it will load.
         </p>
       </div>
+
       <a
         href={safariUrl}
+        onClick={noteTap}
         className="mt-4 block w-full rounded-xl bg-blue-600 py-3 text-center text-sm font-semibold text-white transition-colors hover:bg-blue-700"
       >
         Open in Safari
       </a>
+
+      {stalled && handoffUrl && (
+        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <p className="text-xs font-medium text-slate-900">
+            Didn&apos;t open? Copy this link into Safari.
+          </p>
+          <p className="mt-2 break-all rounded-lg border border-slate-200 bg-white p-2 font-mono text-[11px] text-slate-700">
+            {handoffUrl}
+          </p>
+          <button
+            type="button"
+            onClick={copyLink}
+            className="mt-2 w-full rounded-lg border border-slate-300 py-2 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-100"
+          >
+            {copied ? "Copied" : "Copy link"}
+          </button>
+          <p className="mt-2 text-[11px] leading-relaxed text-slate-500">
+            The link works once and expires in a few minutes.
+          </p>
+        </div>
+      )}
+
       <button
         type="button"
         onClick={onManual}
@@ -443,6 +512,9 @@ function SafariHandoff({ safariUrl, onManual }: { safariUrl: string; onManual: (
       >
         Manual Setup
       </button>
+      <p className="mt-2 text-center text-[11px] text-slate-400">
+        Manual setup works right here, without leaving this window.
+      </p>
     </div>
   );
 }

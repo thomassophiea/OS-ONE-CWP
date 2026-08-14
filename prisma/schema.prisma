@@ -155,6 +155,21 @@ model GuestSession {
   /// SHA-256 of the CSRF token issued with the consent form.
   csrfTokenHash       String?
 
+  // ---- captive-assistant hand-off ----
+  /// SHA-256 of a single-use token that re-establishes this session in a
+  /// different browser.
+  ///
+  /// The OS captive-portal window and the real browser are separate
+  /// applications with separate cookie stores, so a guest who moves from one to
+  /// the other arrives with no session cookie at all. This token is the only
+  /// thing that carries the session across that boundary; it is burnt on first
+  /// use and dropped from the address bar immediately afterwards.
+  handoffTokenHash String?   @unique
+  handoffExpiresAt DateTime?
+  handoffUsedAt    DateTime?
+  /// Source address the hand-off was redeemed from, for audit only.
+  handoffUsedIp    String?
+
   // ---- authorization exchange ----
   authorizationAttemptedAt DateTime?
   authorizedAt             DateTime?

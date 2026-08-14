@@ -38,6 +38,14 @@ const MESSAGES: Record<string, { title: string; body: string }> = {
     title: "We couldn't complete your connection",
     body: "The network gateway declined the request. Reconnect to the Wi-Fi network and try again, or contact the network administrator.",
   },
+  handoff_invalid: {
+    title: "This setup link has expired",
+    body: "Secure setup links are only valid for a few minutes. Go back to the Wi-Fi sign-in window and tap Open in Safari again.",
+  },
+  handoff_used: {
+    title: "This setup link has already been used",
+    body: "Each link works once. Go back to the Wi-Fi sign-in window and tap Open in Safari again to get a fresh one.",
+  },
   revoked: {
     title: "Guest access has been withdrawn",
     body: "This device is no longer permitted on the guest network. Please contact the network administrator.",

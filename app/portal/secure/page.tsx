@@ -4,12 +4,13 @@ import { prisma } from "@/lib/prisma";
 import { log } from "@/lib/log";
 import { SESSION_COOKIE, readSessionCookie } from "@/lib/session/cookie";
 import { isExpired } from "@/lib/session/repository";
-import { toAbsoluteDestination } from "@/lib/captive/safeRedirect";
+import { looksLikeCaptiveAssistant, toAbsoluteDestination } from "@/lib/captive/safeRedirect";
 import { appBaseUrl } from "@/lib/env";
 import {
   networkCapabilities,
   secureOnboardingConfigured,
 } from "@/lib/onboarding/providers/skynet";
+import { issueHandoffToken } from "@/lib/onboarding/handoff";
 import SecureSetup from "./SecureSetup";
 
 export const runtime = "nodejs";
@@ -59,14 +60,35 @@ export default async function SecurePage() {
   }
 
   const destination = toAbsoluteDestination(session.sanitizedDest);
+
+  // The hand-off out of the OS captive-portal window.
+  //
+  // Two halves, and the second one is the half that was missing: the scheme
+  // opens the real browser, and the single-use token in the link is what lets
+  // that browser prove who it is. The assistant and Safari keep separate cookie
+  // stores, so without the token the guest arrives at a page that cannot see
+  // their session and is told it has ended — measured on macOS, and iOS behaves
+  // the same way.
+  //
+  // Minted only when the request is actually coming from an assistant, so an
+  // ordinary browser never puts a token in a link it has no use for.
   let safariUrl: string | null = null;
-  try {
-    // `x-safari-https://` is the scheme iOS uses to hand a URL from an embedded
-    // webview to full Safari. It is what gets a guest out of the Captive
-    // Network Assistant, which cannot install a configuration profile.
-    safariUrl = `x-safari-${appBaseUrl()}/portal/secure`;
-  } catch {
-    safariUrl = null;
+  let handoffUrl: string | null = null;
+  const captiveAssistant = looksLikeCaptiveAssistant(session.userAgent);
+  if (captiveAssistant) {
+    try {
+      const token = await issueHandoffToken(session);
+      if (token) {
+        const target = new URL("/portal/continue", appBaseUrl());
+        target.searchParams.set("h", token);
+        handoffUrl = target.toString();
+        // `x-safari-https://` is the scheme both iOS and macOS Safari register
+        // to accept a URL from another application.
+        safariUrl = handoffUrl.replace(/^https:/, "x-safari-https:");
+      }
+    } catch (err) {
+      log.warn("secure_handoff_unavailable", { err });
+    }
   }
 
   return (
@@ -101,6 +123,7 @@ export default async function SecurePage() {
             securityLabel={network.securityLabel}
             destination={destination}
             safariUrl={safariUrl}
+            handoffUrl={handoffUrl}
           />
         ) : (
           <div className="rounded-2xl bg-white shadow-md p-8 text-center">
