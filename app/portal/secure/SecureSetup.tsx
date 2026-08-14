@@ -1,0 +1,585 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+
+/**
+ * The secure-onboarding experience.
+ *
+ * Three things drive the shape of this component, and all three come from how
+ * the devices actually behave rather than from how the flow reads on paper.
+ *
+ * **The captive mini-browser is not the browser.** iOS's Captive Network
+ * Assistant cannot install a configuration profile and cannot reach Settings.
+ * A "Set Up Secure Wi-Fi" button that silently does nothing there is worse than
+ * no button, so when the server reports an assistant the page leads with
+ * getting into Safari — and still offers manual setup, which works everywhere.
+ *
+ * **A phone cannot scan its own screen.** QR is genuinely the best mechanism on
+ * Android — it is what Android's own Wi-Fi sharing uses — and it is useless on
+ * the single device a guest is holding. So the method plan comes from the
+ * server (see `lib/onboarding/methods.ts`), QR is never primary on a phone, and
+ * where it is shown on a phone it is labelled for another device.
+ *
+ * **Downloaded is not connected.** The completion state comes from polling the
+ * gateway for this station on the secure WLAN. Until that says so, the page
+ * says what actually happened — "Wi-Fi setup downloaded" — and nothing more.
+ *
+ * No credential material is present in this file or in the bundle it compiles
+ * into. The passphrase arrives only from an explicit POST the guest triggers.
+ */
+
+interface MethodOption {
+  id: "APPLE_PROFILE" | "WIFI_QR" | "MANUAL" | "WINDOWS_PROFILE";
+  label: string;
+  description: string;
+  primary: boolean;
+  followUp: string | null;
+}
+
+interface OnboardingView {
+  id: string;
+  status: string;
+  statusLabel: string;
+  platform: string;
+  platformLabel: string;
+  network: { ssid: string; security: string; securityLabel: string; hidden: boolean };
+  methods: MethodOption[];
+  verified: boolean;
+}
+
+interface CredentialView {
+  network: { ssid: string; securityLabel: string };
+  passphrase: string | null;
+  perDevice: boolean;
+}
+
+type Phase = "loading" | "ready" | "unavailable";
+
+const HANDHELD = new Set(["IOS", "IPADOS", "ANDROID"]);
+
+export default function SecureSetup({
+  ssid,
+  securityLabel,
+  destination,
+  safariUrl,
+}: {
+  ssid: string;
+  securityLabel: string;
+  destination: string | null;
+  safariUrl: string | null;
+}) {
+  const [phase, setPhase] = useState<Phase>("loading");
+  const [view, setView] = useState<OnboardingView | null>(null);
+  const [captiveAssistant, setCaptiveAssistant] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const [openPanel, setOpenPanel] = useState<null | "qr" | "manual">(null);
+  const [credential, setCredential] = useState<CredentialView | null>(null);
+  const [credentialError, setCredentialError] = useState<string | null>(null);
+  const [credentialPending, setCredentialPending] = useState(false);
+  const [followUp, setFollowUp] = useState<string | null>(null);
+  const [copied, setCopied] = useState<null | "ssid" | "passphrase">(null);
+
+  const [joinState, setJoinState] = useState<
+    "idle" | "pending" | "completed" | "exhausted" | "unavailable"
+  >("idle");
+  const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ---- start the onboarding session ------------------------------------
+  useEffect(() => {
+    let cancelled = false;
+
+    // Signals only the page can see. `maxTouchPoints` is how an iPad, which
+    // sends a macOS user-agent, is told apart from a Mac.
+    const body = {
+      maxTouchPoints: typeof navigator !== "undefined" ? navigator.maxTouchPoints : 0,
+      platform: guessPlatform(),
+    };
+
+    (async () => {
+      try {
+        const response = await fetch("/api/v1/onboarding/sessions", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const payload = await response.json().catch(() => null);
+        if (cancelled) return;
+        if (!response.ok) {
+          setError(
+            payload?.error?.message ??
+              "Secure Wi-Fi setup is unavailable right now. Your guest access is unaffected."
+          );
+          setPhase("unavailable");
+          return;
+        }
+        setView(payload.onboarding);
+        setCaptiveAssistant(Boolean(payload.captiveAssistant));
+        setPhase("ready");
+      } catch {
+        if (cancelled) return;
+        setError("We couldn't start secure setup. Your guest access is unaffected.");
+        setPhase("unavailable");
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // ---- gateway-confirmed join ------------------------------------------
+  // Runs only while the state is `pending`, and stops itself the moment the
+  // gateway gives a terminal answer. The cadence is the server's (`pollAfterMs`)
+  // so it can be widened without shipping a new bundle, and the server enforces
+  // its own budget on top — see `onboardingMaxChecks`.
+  useEffect(() => {
+    if (joinState !== "pending" || !view) return;
+    let cancelled = false;
+
+    const tick = async () => {
+      try {
+        const response = await fetch(`/api/v1/onboarding/sessions/${view.id}/status`);
+        if (cancelled) return;
+        if (!response.ok) {
+          setJoinState("unavailable");
+          return;
+        }
+        const payload = await response.json();
+        if (cancelled) return;
+        if (payload.state === "completed") {
+          setJoinState("completed");
+          return;
+        }
+        if (payload.state === "pending" && payload.pollAfterMs) {
+          pollTimer.current = setTimeout(tick, payload.pollAfterMs);
+          return;
+        }
+        setJoinState(payload.state === "exhausted" ? "exhausted" : "unavailable");
+      } catch {
+        if (!cancelled) setJoinState("unavailable");
+      }
+    };
+
+    tick();
+    return () => {
+      cancelled = true;
+      if (pollTimer.current) clearTimeout(pollTimer.current);
+    };
+  }, [joinState, view]);
+
+  const startPolling = useCallback(() => {
+    setJoinState((current) => (current === "idle" ? "pending" : current));
+  }, []);
+
+  // ---- actions ----------------------------------------------------------
+  const runMethod = useCallback(
+    async (method: MethodOption) => {
+      if (!view) return;
+      setError(null);
+      setCredentialError(null);
+
+      switch (method.id) {
+        case "APPLE_PROFILE":
+        case "WINDOWS_PROFILE": {
+          const path = method.id === "APPLE_PROFILE" ? "profile" : "windows-profile";
+          setFollowUp(method.followUp);
+          startPolling();
+          // A top-level navigation, not a fetch: iOS only hands a
+          // `.mobileconfig` to Settings when the browser navigates to it, and a
+          // response body read by script cannot be installed.
+          window.location.href = `/api/v1/onboarding/sessions/${view.id}/${path}`;
+          return;
+        }
+        case "WIFI_QR": {
+          setOpenPanel("qr");
+          setFollowUp(method.followUp);
+          startPolling();
+          return;
+        }
+        case "MANUAL": {
+          setOpenPanel("manual");
+          setFollowUp(method.followUp);
+          return;
+        }
+      }
+    },
+    [view, startPolling]
+  );
+
+  const revealCredential = useCallback(async () => {
+    if (!view || credentialPending) return;
+    setCredentialPending(true);
+    setCredentialError(null);
+    try {
+      // POST, so this can never be a URL, a bookmark, a prefetch or a history
+      // entry — the response body is the passphrase.
+      const response = await fetch(`/api/v1/onboarding/sessions/${view.id}/credential`, {
+        method: "POST",
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        setCredentialError(
+          payload?.error?.message ?? "The network details couldn't be retrieved."
+        );
+        return;
+      }
+      setCredential(payload);
+      startPolling();
+    } catch {
+      setCredentialError("The network details couldn't be retrieved.");
+    } finally {
+      setCredentialPending(false);
+    }
+  }, [view, credentialPending, startPolling]);
+
+  const copy = useCallback(async (value: string, what: "ssid" | "passphrase") => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(what);
+      setTimeout(() => setCopied(null), 2000);
+    } catch {
+      // Clipboard access is denied in some captive webviews. The value is on
+      // screen and can be typed, so this is not worth an error message.
+    }
+  }, []);
+
+  // ---- render -----------------------------------------------------------
+  if (phase === "loading") {
+    return (
+      <Card>
+        <p className="text-sm text-slate-500 text-center py-6">Preparing secure setup…</p>
+      </Card>
+    );
+  }
+
+  if (phase === "unavailable" || !view) {
+    return (
+      <Card>
+        <h1 className="text-lg font-bold text-slate-900">Secure Wi-Fi setup is unavailable</h1>
+        <p className="mt-2 text-sm text-slate-500">{error}</p>
+        <ContinueLink destination={destination} />
+      </Card>
+    );
+  }
+
+  const primary = view.methods.find((m) => m.primary) ?? view.methods[0];
+  const secondary = view.methods.filter((m) => m !== primary);
+  const handheld = HANDHELD.has(view.platform);
+  // The assistant cannot install a profile or reach Settings, so on an Apple
+  // device the first move is getting out of it.
+  const needsSafari =
+    captiveAssistant &&
+    Boolean(safariUrl) &&
+    (view.platform === "IOS" || view.platform === "IPADOS" || view.platform === "MACOS");
+
+  return (
+    <Card>
+      <header>
+        <h1 className="text-xl font-bold text-slate-900">Secure Guest Access</h1>
+        <p className="mt-1 text-sm text-slate-500">
+          Use our encrypted Wi-Fi network for better security and automatic reconnect.
+        </p>
+      </header>
+
+      <p className="mt-4 flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-900">
+        <span aria-hidden="true">🔒</span>
+        <span>{ssid}</span>
+        <span className="ml-auto text-xs font-normal text-slate-500">{securityLabel}</span>
+      </p>
+
+      {joinState === "completed" ? (
+        <div className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+          <p className="text-sm font-semibold text-emerald-900">
+            You&apos;re on {ssid}
+          </p>
+          <p className="mt-1 text-xs text-emerald-800">
+            The network confirmed this device is now connected to the secure
+            network.
+          </p>
+          <ContinueLink destination={destination} />
+        </div>
+      ) : needsSafari ? (
+        <SafariHandoff
+          safariUrl={safariUrl!}
+          onManual={() => {
+            setOpenPanel("manual");
+            setFollowUp(null);
+          }}
+        />
+      ) : (
+        <>
+          <div className="mt-5 space-y-3">
+            {primary && (
+              <button
+                type="button"
+                onClick={() => runMethod(primary)}
+                className="w-full rounded-xl bg-blue-600 py-3 text-sm font-semibold text-white transition-colors hover:bg-blue-700"
+              >
+                {primary.label}
+              </button>
+            )}
+            {primary && (
+              <p className="text-center text-xs text-slate-500">{primary.description}</p>
+            )}
+          </div>
+
+          {secondary.length > 0 && (
+            <div className="mt-5 flex flex-wrap justify-center gap-2">
+              {secondary.map((method) => (
+                <button
+                  key={method.id}
+                  type="button"
+                  onClick={() => runMethod(method)}
+                  className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-medium text-slate-700 transition-colors hover:border-slate-400 hover:bg-slate-50"
+                >
+                  {method.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {followUp && joinState !== "completed" && (
+        <p className="mt-5 rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs leading-relaxed text-blue-900">
+          {followUp}
+        </p>
+      )}
+
+      {openPanel === "qr" && (
+        <QrPanel
+          id={view.id}
+          ssid={ssid}
+          handheld={handheld}
+          onManual={() => setOpenPanel("manual")}
+        />
+      )}
+
+      {openPanel === "manual" && (
+        <ManualPanel
+          ssid={ssid}
+          securityLabel={securityLabel}
+          credential={credential}
+          error={credentialError}
+          pending={credentialPending}
+          copied={copied}
+          onReveal={revealCredential}
+          onCopy={copy}
+        />
+      )}
+
+      {joinState === "pending" && (
+        <p className="mt-5 text-center text-xs text-slate-400">
+          Waiting for this device to appear on {ssid}…
+        </p>
+      )}
+      {joinState === "exhausted" && (
+        <p className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs leading-relaxed text-slate-600">
+          We stopped checking. If your device is set to use a private Wi-Fi
+          address, we can&apos;t confirm the switch from here — open your Wi-Fi
+          settings to see whether you&apos;re on {ssid}.
+        </p>
+      )}
+      {joinState === "unavailable" && (
+        <p className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs leading-relaxed text-slate-600">
+          We can&apos;t confirm the switch from here. Open your Wi-Fi settings to
+          check whether you&apos;re on {ssid}.
+        </p>
+      )}
+
+      <ContinueLink destination={destination} />
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+
+function Card({ children }: { children: React.ReactNode }) {
+  return <div className="rounded-2xl bg-white p-6 shadow-md sm:p-8">{children}</div>;
+}
+
+function ContinueLink({ destination }: { destination: string | null }) {
+  return (
+    <p className="mt-6 text-center text-xs text-slate-400">
+      {destination ? (
+        <a className="text-blue-600 underline break-all" href={destination}>
+          Skip and continue to the internet
+        </a>
+      ) : (
+        "You can close this page at any time — your guest access stays active."
+      )}
+    </p>
+  );
+}
+
+/**
+ * The way out of iOS's Captive Network Assistant.
+ *
+ * `x-safari-https://…` is the scheme that opens a URL in full Safari from an
+ * embedded webview. It is not guaranteed — so the plain link is offered
+ * underneath it, and manual setup, which needs neither, is offered beside it.
+ */
+function SafariHandoff({ safariUrl, onManual }: { safariUrl: string; onManual: () => void }) {
+  return (
+    <div className="mt-5">
+      <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+        <p className="text-sm font-semibold text-amber-900">One step first</p>
+        <p className="mt-1 text-xs leading-relaxed text-amber-800">
+          This window can&apos;t install Wi-Fi settings. Open this page in Safari
+          to continue — you&apos;re already online, so it will load.
+        </p>
+      </div>
+      <a
+        href={safariUrl}
+        className="mt-4 block w-full rounded-xl bg-blue-600 py-3 text-center text-sm font-semibold text-white transition-colors hover:bg-blue-700"
+      >
+        Open in Safari
+      </a>
+      <button
+        type="button"
+        onClick={onManual}
+        className="mt-3 w-full rounded-lg border border-slate-300 py-2 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-50"
+      >
+        Manual Setup
+      </button>
+    </div>
+  );
+}
+
+function QrPanel({
+  id,
+  ssid,
+  handheld,
+  onManual,
+}: {
+  id: string;
+  ssid: string;
+  handheld: boolean;
+  onManual: () => void;
+}) {
+  return (
+    <div className="mt-5 rounded-xl border border-slate-200 p-4 text-center">
+      <p className="text-sm font-semibold text-slate-900">Scan to join {ssid} securely</p>
+      <p className="mt-1 text-xs text-slate-500">
+        {handheld
+          ? "Scan this from the other device you want to connect."
+          : "Open the camera on the phone or tablet you want to connect."}
+      </p>
+      {/* The credential is encoded inside the image, which is generated
+          server-side and served `no-store`. It is never in this page's HTML. */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={`/api/v1/onboarding/sessions/${id}/qr`}
+        alt={`Wi-Fi QR code for ${ssid}`}
+        className="mx-auto mt-4 h-48 w-48"
+      />
+      <button
+        type="button"
+        onClick={onManual}
+        className="mt-4 text-xs font-medium text-blue-600 underline"
+      >
+        Can&apos;t scan? Manual setup
+      </button>
+    </div>
+  );
+}
+
+function ManualPanel({
+  ssid,
+  securityLabel,
+  credential,
+  error,
+  pending,
+  copied,
+  onReveal,
+  onCopy,
+}: {
+  ssid: string;
+  securityLabel: string;
+  credential: CredentialView | null;
+  error: string | null;
+  pending: boolean;
+  copied: null | "ssid" | "passphrase";
+  onReveal: () => void;
+  onCopy: (value: string, what: "ssid" | "passphrase") => void;
+}) {
+  return (
+    <div className="mt-5 rounded-xl border border-slate-200 p-4">
+      <p className="text-sm font-semibold text-slate-900">Manual setup</p>
+      <dl className="mt-3 divide-y divide-slate-200 rounded-lg border border-slate-200 text-sm">
+        <div className="flex items-center justify-between gap-3 px-3 py-2">
+          <dt className="text-slate-500">Network</dt>
+          <dd className="flex items-center gap-2 font-medium text-slate-900">
+            <span className="break-all">{ssid}</span>
+            <button
+              type="button"
+              onClick={() => onCopy(ssid, "ssid")}
+              className="text-xs text-blue-600 underline"
+            >
+              {copied === "ssid" ? "Copied" : "Copy"}
+            </button>
+          </dd>
+        </div>
+        <div className="flex items-center justify-between gap-3 px-3 py-2">
+          <dt className="text-slate-500">Security</dt>
+          <dd className="font-medium text-slate-900">{securityLabel}</dd>
+        </div>
+        <div className="flex items-center justify-between gap-3 px-3 py-2">
+          <dt className="text-slate-500">Password</dt>
+          <dd className="flex items-center gap-2 text-right">
+            {credential?.passphrase ? (
+              <>
+                <span className="break-all font-mono text-xs text-slate-900">
+                  {credential.passphrase}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onCopy(credential.passphrase!, "passphrase")}
+                  className="text-xs text-blue-600 underline"
+                >
+                  {copied === "passphrase" ? "Copied" : "Copy"}
+                </button>
+              </>
+            ) : (
+              // Revealed only on an explicit tap — never rendered into the page
+              // that arrives from the server.
+              <button
+                type="button"
+                onClick={onReveal}
+                disabled={pending}
+                className="rounded-lg border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 disabled:text-slate-400"
+              >
+                {pending ? "Loading…" : "Show password"}
+              </button>
+            )}
+          </dd>
+        </div>
+      </dl>
+      {error && <p className="mt-3 text-xs text-amber-700">{error}</p>}
+      <p className="mt-3 text-xs leading-relaxed text-slate-500">
+        Open your Wi-Fi settings, choose {ssid}, and enter the password above.
+      </p>
+    </div>
+  );
+}
+
+/**
+ * The page's own guess at its platform, sent to the server as one more signal.
+ *
+ * `userAgentData.platform` is authoritative where it exists and unavailable on
+ * Safari, so this returns null rather than a fabrication when it cannot tell —
+ * the server still has Client Hints and the user-agent to work from.
+ */
+function guessPlatform(): string | null {
+  if (typeof navigator === "undefined") return null;
+  const touch = navigator.maxTouchPoints ?? 0;
+  const ua = navigator.userAgent ?? "";
+  if (/\bAndroid\b/i.test(ua)) return "ANDROID";
+  if (/\biPhone\b|\biPod\b/i.test(ua)) return "IOS";
+  if (/\biPad\b/i.test(ua)) return "IPADOS";
+  // iPadOS reports a Mac user-agent; a Mac with a touchscreen does not exist.
+  if (/\bMacintosh\b|\bMac OS X\b/i.test(ua)) return touch > 1 ? "IPADOS" : "MACOS";
+  if (/\bWindows NT\b/i.test(ua)) return "WINDOWS";
+  return null;
+}

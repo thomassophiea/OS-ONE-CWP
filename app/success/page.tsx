@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { log } from "@/lib/log";
 import { SESSION_COOKIE, readSessionCookie } from "@/lib/session/cookie";
@@ -81,6 +82,20 @@ export default async function SuccessPage({
     } catch (err) {
       log.error("success_update_failed", { err });
     }
+  }
+
+  // The one place the two workflows diverge. The guest is online either way and
+  // by exactly the same mechanism; a guest who asked for secure setup is handed
+  // to it instead of being forwarded to the page they were originally opening.
+  //
+  // Deliberately after the AUTHORIZED stamp and the ledger write, so choosing
+  // the secure path cannot cost a guest the record of their authorization.
+  if (
+    session &&
+    session.onboardingRequested &&
+    (session.status === "AUTHORIZED" || session.status === "ACCEPTED")
+  ) {
+    redirect("/portal/secure");
   }
 
   const destination = toAbsoluteDestination(session?.sanitizedDest);

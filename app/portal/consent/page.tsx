@@ -10,6 +10,10 @@ import {
 } from "@/lib/session/cookie";
 import { isExpired } from "@/lib/session/repository";
 import { normalizeMac } from "@/lib/captive/extractSessionFields";
+import {
+  networkCapabilities,
+  secureOnboardingConfigured,
+} from "@/lib/onboarding/providers/skynet";
 import ConsentForm from "./ConsentForm";
 
 export const runtime = "nodejs";
@@ -34,6 +38,20 @@ export default async function ConsentPage() {
   if (isExpired(session)) redirect("/portal/error?code=expired");
   if (session.status === "AUTHORIZED" || session.status === "ACCEPTED") {
     redirect("/success");
+  }
+
+  // The secure option is drawn only if a secure WLAN is actually configured and
+  // readable. Any failure here removes the second button and leaves the open
+  // guest path exactly as it was — this lookup must never be able to break the
+  // page a guest needs in order to get online.
+  let secureNetwork: { ssid: string; securityLabel: string } | null = null;
+  if (secureOnboardingConfigured()) {
+    try {
+      const { network } = await networkCapabilities();
+      secureNetwork = { ssid: network.ssid, securityLabel: network.securityLabel };
+    } catch (err) {
+      log.warn("consent_secure_network_unavailable", { err });
+    }
   }
 
   return (
@@ -75,6 +93,7 @@ export default async function ConsentPage() {
         <ConsentForm
           csrfToken={csrfToken}
           challenge={consentChallenge(session.id)}
+          secureNetwork={secureNetwork}
         />
 
         <p className="mt-6 text-center text-xs text-slate-400">OS-ONE-CWP</p>

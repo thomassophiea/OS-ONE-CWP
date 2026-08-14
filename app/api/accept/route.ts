@@ -76,12 +76,17 @@ export async function POST(request: NextRequest) {
   let agreed = false;
   let interaction: string | null = null;
   let dwellMs = 0;
+  // Which of the two workflows the guest chose. Anything other than an explicit
+  // "secure" is the open path, so a missing, unknown or forged value degrades to
+  // the behaviour that existed before this field did.
+  let secureRequested = false;
   try {
     const form = await request.formData();
     submittedCsrf = form.get("csrfToken")?.toString() ?? null;
     agreed = form.get("agree")?.toString() === "yes";
     interaction = form.get("interaction")?.toString() ?? null;
     dwellMs = Number(form.get("dwellMs")?.toString() ?? "0");
+    secureRequested = form.get("mode")?.toString() === "secure";
   } catch {
     return fail(base, "bad_request");
   }
@@ -234,6 +239,11 @@ export async function POST(request: NextRequest) {
         status: "ACCEPTED",
         acceptedTerms: true,
         acceptedAt: now,
+        // Recorded here, acted on at /success. The authorization itself — the
+        // signed approval URL above, the gateway callback, the role change —
+        // is identical either way, which is what keeps the secure option from
+        // being able to regress getting online.
+        onboardingRequested: secureRequested,
         authorizationAttemptedAt: now,
         authorizationResult: "APPROVAL_URL_ISSUED",
         // Burn the CSRF token so the form cannot be replayed.
@@ -254,6 +264,7 @@ export async function POST(request: NextRequest) {
     // The URL carries a signature; record only its non-secret shape.
     approvalScheme: session.gatewayPort === "80" ? "http" : "https",
     destForwarded: Boolean(session.sanitizedDest),
+    workflow: secureRequested ? "secure" : "open",
     viaOsAssistant,
     durationMs: Date.now() - startedAt,
   });

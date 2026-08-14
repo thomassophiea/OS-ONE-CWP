@@ -26,9 +26,16 @@ import { useEffect, useRef, useState } from "react";
 export default function ConsentForm({
   csrfToken,
   challenge,
+  secureNetwork,
 }: {
   csrfToken: string;
   challenge: string;
+  /**
+   * The optional secure WLAN, when one is configured. Null means the second
+   * option is not rendered at all — the open guest path is then byte-identical
+   * to what it was before secure onboarding existed.
+   */
+  secureNetwork: { ssid: string; securityLabel: string } | null;
 }) {
   const [agreed, setAgreed] = useState(false);
   const [gestured, setGestured] = useState(false);
@@ -71,8 +78,12 @@ export default function ConsentForm({
         </span>
       </label>
 
+      {/* The open guest path. Unchanged: same name, same position, same submit,
+          same handler. Everything below it is additive. */}
       <button
         type="submit"
+        name="mode"
+        value="open"
         disabled={!ready}
         onPointerDown={noteGesture}
         onKeyDown={noteGesture}
@@ -85,6 +96,49 @@ export default function ConsentForm({
         <p className="mt-3 text-center text-xs text-slate-400">
           Tick the box above to continue.
         </p>
+      )}
+
+      {secureNetwork && (
+        <>
+          <div className="my-6 flex items-center gap-3" aria-hidden="true">
+            <span className="h-px flex-1 bg-slate-200" />
+            <span className="text-xs uppercase tracking-wide text-slate-400">or</span>
+            <span className="h-px flex-1 bg-slate-200" />
+          </div>
+
+          <section className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <h2 className="text-sm font-semibold text-slate-900">Secure Guest Access</h2>
+            <p className="mt-1 text-xs text-slate-600 leading-relaxed">
+              For better security and automatic reconnect, set up this device on
+              our encrypted Wi-Fi network.
+            </p>
+            <p className="mt-3 flex items-center gap-2 text-sm font-medium text-slate-900">
+              <span aria-hidden="true">🔒</span>
+              <span>{secureNetwork.ssid}</span>
+              <span className="text-xs font-normal text-slate-500">
+                {secureNetwork.securityLabel}
+              </span>
+            </p>
+
+            {/* Same form, same consent, same authorization — only the page the
+                gateway returns to afterwards differs. Secure setup is never a
+                prerequisite for getting online. */}
+            <button
+              type="submit"
+              name="mode"
+              value="secure"
+              disabled={!ready}
+              onPointerDown={noteGesture}
+              onKeyDown={noteGesture}
+              className="mt-4 w-full rounded-xl border border-slate-300 bg-white py-3 text-sm font-semibold text-slate-900 transition-colors hover:border-slate-400 hover:bg-slate-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-400"
+            >
+              Accept &amp; Connect Securely
+            </button>
+            <p className="mt-2 text-center text-[11px] text-slate-400">
+              You&apos;ll get internet access first, then we&apos;ll help you switch.
+            </p>
+          </section>
+        </>
       )}
     </form>
   );
