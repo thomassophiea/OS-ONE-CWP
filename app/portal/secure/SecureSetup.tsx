@@ -420,7 +420,11 @@ export default function SecureSetup({
         </p>
       )}
 
-      <ContinueLink destination={destination} messages={messages} />
+      {/* The completed card carries its own continue link, so the trailing one
+          would be the same offer twice in a row. */}
+      {joinState !== "completed" && (
+        <ContinueLink destination={destination} messages={messages} />
+      )}
     </Card>
   );
 }
