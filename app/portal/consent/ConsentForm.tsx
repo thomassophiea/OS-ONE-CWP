@@ -135,9 +135,30 @@ export default function ConsentForm({
         </fieldset>
       )}
 
-      {/* The storage prohibition. Rendered whether or not fields are collected:
-          a guest is entitled to say "don't keep anything about me" before they
-          know what will be asked, and the answer has to mean the same thing. */}
+      <label className="mb-5 flex cursor-pointer select-none items-start gap-3">
+        <input
+          type="checkbox"
+          name="agree"
+          value="yes"
+          checked={agreed}
+          onPointerDown={noteGesture}
+          onKeyDown={noteGesture}
+          onChange={(e) => {
+            noteGesture();
+            setAgreed(e.target.checked);
+          }}
+          className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 text-blue-600"
+        />
+        <span className="text-sm text-slate-700">{messages.consent.agree}</span>
+      </label>
+
+      {/* The storage prohibition, placed last so it is the final thing weighed
+          before submitting — and after the agreement, so "the terms of use
+          above" refers to the terms and nothing in between.
+
+          Rendered whether or not fields are collected: a guest is entitled to
+          say "don't keep anything about me" before they know what will be
+          asked, and the answer has to mean the same thing either way. */}
       <div className="mb-5 rounded-xl border border-slate-200 bg-slate-50 p-4">
         <label className="flex cursor-pointer select-none items-start gap-3">
           <input
@@ -168,23 +189,6 @@ export default function ConsentForm({
           </p>
         )}
       </div>
-
-      <label className="mb-5 flex cursor-pointer select-none items-start gap-3">
-        <input
-          type="checkbox"
-          name="agree"
-          value="yes"
-          checked={agreed}
-          onPointerDown={noteGesture}
-          onKeyDown={noteGesture}
-          onChange={(e) => {
-            noteGesture();
-            setAgreed(e.target.checked);
-          }}
-          className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 text-blue-600"
-        />
-        <span className="text-sm text-slate-700">{messages.consent.agree}</span>
-      </label>
 
       {/* The open guest path. Unchanged: same name, same position, same submit,
           same handler. Everything below it is additive. */}
