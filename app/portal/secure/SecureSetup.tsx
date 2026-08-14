@@ -136,6 +136,24 @@ export default function SecureSetup({
         setView(payload.onboarding);
         setCaptiveAssistant(Boolean(payload.captiveAssistant));
         setPhase("ready");
+
+        // Pick up where a previous visit left off.
+        //
+        // A guest who installed the profile, watched their device switch, and
+        // came back to this page would otherwise sit in front of a setup screen
+        // that never checks — polling used to begin only when a method was
+        // tapped, so returning was the one moment it could not confirm. If the
+        // gateway has already seen them, say so; if they have been handed an
+        // artifact, start watching for the result.
+        if (payload.onboarding?.verified) {
+          setJoinState("completed");
+        } else if (
+          ["PROFILE_DOWNLOADED", "QR_DISPLAYED", "MANUAL_SETUP_VIEWED"].includes(
+            payload.onboarding?.status
+          )
+        ) {
+          setJoinState("pending");
+        }
       } catch {
         if (cancelled) return;
         setError(messages.secure.unavailableStart);
