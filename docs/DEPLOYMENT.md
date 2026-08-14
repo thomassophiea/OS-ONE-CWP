@@ -55,6 +55,15 @@ existed before the feature. See [SECURE_ONBOARDING.md](SECURE_ONBOARDING.md).
 | `GATEWAY_USERNAME` / `GATEWAY_PASSWORD` | controller credentials, read-only use |
 | `ONBOARDING_TTL_SECONDS` | `1800` |
 | `ONBOARDING_MAX_CHECKS` | `60` |
+
+### Captive Portal API — RFC 8908 (optional)
+
+| Variable | Value |
+|---|---|
+| `CAPPORT_TOKEN_SECRET` | shared with whatever provisions DHCP option 114 |
+
+Both API routes are always served. They are only reached if the network
+advertises them (RFC 8910), so nothing gates them. See [CAPPORT.md](CAPPORT.md).
 | `SESSION_SECRET` | 32-byte random hex |
 | `PORTAL_SESSION_TTL_SECONDS` | `900` |
 | `ECP_APPROVAL_TTL_SECONDS` | `60` |

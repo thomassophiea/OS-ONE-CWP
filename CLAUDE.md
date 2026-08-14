@@ -42,3 +42,22 @@ only inside a provisioning artifact or the body of `POST /credential`.
 
 Full design, per-platform mechanisms and the PPSK integration point:
 `docs/SECURE_ONBOARDING.md`.
+
+## Captive Portal API (RFC 8908)
+
+`/captive-api` and `/captive-api/{token}` serve the standards-track alternative
+to probe-and-infer captive detection. Dormant until the network emits DHCP
+option 114 — the Campus Controller cannot, so nothing reaches these routes yet.
+
+Two invariants, both load-bearing and both tested:
+
+- **An unidentified client is told `captive: true`.** Wrongly captive costs one
+  redundant sign-in sheet that resolves on tap; wrongly free leaves a captive
+  guest with no route to the portal.
+- **An online guest with unfinished secure setup is not captive.** Secure Wi-Fi
+  is advertised through `venue-info-url`, never `user-portal-url`.
+
+The per-client token is an HMAC of the station MAC, not a random per-session
+value: DHCP hands out the URI before the session exists.
+
+Full design and the gateway findings: `docs/CAPPORT.md`.
