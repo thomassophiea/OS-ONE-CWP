@@ -230,6 +230,9 @@ model GuestSession {
   @@index([authorizedAt])
   @@index([ssid])
   @@index([status, createdAt])
+  // Operators need "how many guests exercised the storage control?" without a
+  // full scan; it is the only question this flag is ever aggregated for.
+  @@index([personalDataAllowed])
 }
 
 model AuditEvent {
