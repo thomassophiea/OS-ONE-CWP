@@ -289,15 +289,19 @@ export async function verifyJoin(record: OnboardingSession): Promise<Verificatio
   try {
     list = await stations();
   } catch (err) {
-    await prisma.onboardingSession
+    // Return the *updated* record, not the one read before the increment.
+    // Reporting the pre-increment count told a caller the poll budget had not
+    // been consumed when it had — the counter was right in the database and
+    // wrong in the answer, which is the harder kind of wrong to notice.
+    const counted = await prisma.onboardingSession
       .update({
         where: { id: record.id },
         data: { checkCount: { increment: 1 }, lastCheckedAt: new Date() },
       })
-      .catch(() => undefined);
+      .catch(() => record);
     return {
       state: "unavailable",
-      record,
+      record: counted,
       reason: err instanceof GatewayUnavailableError ? "gateway_unreachable" : "gateway_error",
     };
   }
