@@ -40,6 +40,7 @@ import {
   newCsrfToken,
 } from "@/lib/session/cookie";
 import { audit, isUniqueViolation } from "@/lib/session/repository";
+import { capportTokenForMac, hashCapportToken } from "@/lib/capport/resolve";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -51,6 +52,12 @@ export const dynamic = "force-dynamic";
  * query string byte-for-byte as it emits it, and Next's decoded `searchParams`
  * cannot be used to reconstruct it faithfully.
  */
+/** SHA-256 of the station's derived CAPPORT token, or null when unavailable. */
+function capportHashForMac(macAddress: string | null): string | null {
+  const token = capportTokenForMac(macAddress);
+  return token ? hashCapportToken(token) : null;
+}
+
 export async function GET(request: NextRequest) {
   const startedAt = Date.now();
 
@@ -182,6 +189,10 @@ export async function GET(request: NextRequest) {
     sanitizedDest: destVerdict.safe ? destVerdict.value : null,
     destRejectionReason: destVerdict.safe ? null : destVerdict.reason,
     csrfTokenHash: csrf.hash,
+    // The CAPPORT per-client token is deterministic from the station MAC, so
+    // storing its hash here simply makes the lookup an indexed one — the value
+    // the network puts in DHCP option 114 is derivable without us.
+    capportTokenHash: capportHashForMac(canonicalClientMac),
     expiresAt,
   };
 

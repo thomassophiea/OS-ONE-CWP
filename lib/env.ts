@@ -163,3 +163,15 @@ export function onboardingMaxChecks(): number {
   const raw = Number(process.env.ONBOARDING_MAX_CHECKS);
   return Number.isFinite(raw) && raw > 0 ? raw : 60;
 }
+
+/**
+ * Shared secret for deriving CAPPORT per-client tokens from a station MAC.
+ *
+ * Both this portal and whatever provisions DHCP option 114 derive the same
+ * token independently, so no registration step or lookup service is needed
+ * between them. Absent means the per-client URI is simply not available and the
+ * network-wide API route is the only one served.
+ */
+export function capportTokenSecret(): string | null {
+  return process.env.CAPPORT_TOKEN_SECRET?.trim() || null;
+}

@@ -170,6 +170,20 @@ model GuestSession {
   /// Source address the hand-off was redeemed from, for audit only.
   handoffUsedIp    String?
 
+  // ---- CAPPORT (RFC 8908) ----
+  /// SHA-256 of this session's Captive Portal API token.
+  ///
+  /// RFC 8908 §4: "If the API server needs information about the client
+  /// identity that is not otherwise visible to it, the URI provided to the
+  /// client during provisioning SHOULD be distinct per client." This portal
+  /// runs off-network, behind the site's NAT, so it cannot see a station's
+  /// address — a per-client URI is the mechanism the RFC points at.
+  ///
+  /// Deliberately not the session cookie: this token is read-only. It can
+  /// produce a captive-state document and nothing else — it cannot authorize,
+  /// cannot reveal a credential, and never sets a cookie.
+  capportTokenHash String? @unique
+
   // ---- authorization exchange ----
   authorizationAttemptedAt DateTime?
   authorizedAt             DateTime?
