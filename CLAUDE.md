@@ -61,3 +61,32 @@ The per-client token is an HMAC of the station MAC, not a random per-session
 value: DHCP hands out the URI before the session exists.
 
 Full design and the gateway findings: `docs/CAPPORT.md`.
+
+## Storage prohibition and localisation
+
+`GuestSession.personalDataAllowed` is the session-level answer to "may personal
+data from this guest be written?". It is set once, on the server, from the
+consent form, and read by every write afterwards. Two rules it exists to keep:
+
+- **Avoid the write, never undo it.** `forPersistence` and
+  `forLedgerPersistence` strip personal values before a query is built. Do not
+  add a deletion pass — data that was written and deleted still existed in a WAL
+  segment and any backup taken in between.
+- **Operational is not personal.** MAC, AP, gateway token and timestamps are how
+  the network functions and are always kept. What the guest typed about
+  themselves is what the prohibition covers, and
+  `GuestFieldDefinition.personal` is the only place that judgement lives.
+
+Guest fields are declared once in `lib/guestFields/registry.ts` and read by the
+form, the catalogues, validation, the API, the ledger and the privacy filter. A
+new field is one entry; it defaults to `personal: true`.
+
+The logger redacts personal keys unconditionally. Do not make it conditional on
+a session — the call site that forgets is the leak.
+
+Eight locales in `lib/i18n/locales/`, typed against English so a missing key is a
+build error. Detection is cookie, then `Accept-Language`, then English — never
+geolocation. SSIDs, security modes, `netsh` and `Settings` stay untranslated
+because a guest has to find them on their own screen.
+
+Full design: `docs/PRIVACY_AND_I18N.md`.

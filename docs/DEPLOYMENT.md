@@ -56,6 +56,22 @@ existed before the feature. See [SECURE_ONBOARDING.md](SECURE_ONBOARDING.md).
 | `ONBOARDING_TTL_SECONDS` | `1800` |
 | `ONBOARDING_MAX_CHECKS` | `60` |
 
+### Guest fields and privacy (optional)
+
+Nothing is collected from a guest unless this says so. See
+[PRIVACY_AND_I18N.md](PRIVACY_AND_I18N.md).
+
+| Variable | Value |
+|---|---|
+| `GUEST_FIELDS_ENABLED` | e.g. `fullName,email,phone`. Empty ⇒ collect nothing. |
+| `GUEST_FIELDS_REQUIRED` | subset of the above that is mandatory |
+
+The "Do not store my personal data" control needs no configuration; it is always
+offered, and applies whether or not any field is collected.
+
+Localisation needs no configuration either. Adding a language is a catalogue
+file and one registry row.
+
 ### Captive Portal API — RFC 8908 (optional)
 
 | Variable | Value |
