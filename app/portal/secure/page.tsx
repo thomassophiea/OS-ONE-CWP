@@ -1,4 +1,4 @@
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { log } from "@/lib/log";
@@ -70,11 +70,15 @@ export default async function SecurePage() {
   // their session and is told it has ended — measured on macOS, and iOS behaves
   // the same way.
   //
-  // Minted only when the request is actually coming from an assistant, so an
-  // ordinary browser never puts a token in a link it has no use for.
+  // Minted only when *this* request is coming from an assistant — read from the
+  // live request rather than from the session record, which still holds the
+  // user agent of whichever browser started the visit. Using the stored value
+  // meant Safari, arriving via the hand-off, minted a fresh token it had no use
+  // for and overwrote the one it had just redeemed.
   let safariUrl: string | null = null;
   let handoffUrl: string | null = null;
-  const captiveAssistant = looksLikeCaptiveAssistant(session.userAgent);
+  const requestHeaders = await headers();
+  const captiveAssistant = looksLikeCaptiveAssistant(requestHeaders.get("user-agent"));
   if (captiveAssistant) {
     try {
       const token = await issueHandoffToken(session);
