@@ -147,6 +147,7 @@ export const en = {
     stalledTitle: "Didn't open? Copy this link into Safari.",
     copyLink: "Copy link",
     linkNote: "The link works once and expires in a few minutes.",
+    manualSetup: "Manual Setup",
     manualWorksHere: "Manual setup works right here, without leaving this window.",
   },
 

@@ -4,6 +4,20 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { format, type Messages } from "@/lib/i18n";
 
 /**
+ * Only the parts of the catalogue this component renders.
+ *
+ * Props to a client component are serialised into the page, so passing the
+ * whole catalogue shipped every error string and every consent paragraph to a
+ * browser that renders none of them. Naming the subtrees keeps the payload to
+ * what is used and makes the dependency legible — adding a string here is a
+ * type error until the page passes it.
+ */
+export type SecureSetupMessages = Pick<
+  Messages,
+  "common" | "secure" | "handoff" | "qr" | "manual"
+>;
+
+/**
  * The secure-onboarding experience.
  *
  * Three things drive the shape of this component, and all three come from how
@@ -66,9 +80,9 @@ export default function SecureSetup({
   safariUrl,
   handoffUrl,
 }: {
-  /** The guest's catalogue. Passed down rather than fetched: this component is
+  /** The guest's strings. Passed down rather than fetched: this component is
    *  rendered inside captive webviews where an extra round trip is a risk. */
-  messages: Messages;
+  messages: SecureSetupMessages;
   ssid: string;
   securityLabel: string;
   destination: string | null;
@@ -404,7 +418,7 @@ function ContinueLink({
   messages,
 }: {
   destination: string | null;
-  messages: Messages;
+  messages: SecureSetupMessages;
 }) {
   return (
     <p className="mt-6 text-center text-xs text-slate-400">
@@ -444,7 +458,7 @@ function SafariHandoff({
   safariUrl: string;
   handoffUrl: string | null;
   onManual: () => void;
-  messages: Messages;
+  messages: SecureSetupMessages;
 }) {
   const [stalled, setStalled] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -512,7 +526,7 @@ function SafariHandoff({
         onClick={onManual}
         className="mt-3 w-full rounded-lg border border-slate-300 py-2 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-50"
       >
-        {messages.methods.manualSetup}
+        {messages.handoff.manualSetup}
       </button>
       <p className="mt-2 text-center text-[11px] text-slate-400">
         {messages.handoff.manualWorksHere}
@@ -532,7 +546,7 @@ function QrPanel({
   ssid: string;
   handheld: boolean;
   onManual: () => void;
-  messages: Messages;
+  messages: SecureSetupMessages;
 }) {
   return (
     <div className="mt-5 rounded-xl border border-slate-200 p-4 text-center">
@@ -580,7 +594,7 @@ function ManualPanel({
   copied: null | "ssid" | "passphrase";
   onReveal: () => void;
   onCopy: (value: string, what: "ssid" | "passphrase") => void;
-  messages: Messages;
+  messages: SecureSetupMessages;
 }) {
   return (
     <div className="mt-5 rounded-xl border border-slate-200 p-4">

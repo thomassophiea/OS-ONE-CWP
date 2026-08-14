@@ -124,6 +124,7 @@ export const ja: Messages = {
     stalledTitle: "開かない場合は、このリンクを Safari にコピーしてください。",
     copyLink: "リンクをコピー",
     linkNote: "このリンクは一度だけ有効で、数分で期限切れになります。",
+    manualSetup: "手動設定",
     manualWorksHere: "手動設定はこのウィンドウのまま行えます。",
   },
 

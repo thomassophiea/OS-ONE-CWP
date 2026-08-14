@@ -119,6 +119,7 @@ export const zhHans: Messages = {
     stalledTitle: "没有打开？请复制此链接到 Safari。",
     copyLink: "复制链接",
     linkNote: "该链接仅可使用一次，几分钟后失效。",
+    manualSetup: "手动设置",
     manualWorksHere: "手动设置可直接在此窗口完成，无需离开。",
   },
 

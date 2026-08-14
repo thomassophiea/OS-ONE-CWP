@@ -121,6 +121,7 @@ export const fr: Messages = {
     stalledTitle: "Rien ne s'est ouvert ? Copiez ce lien dans Safari.",
     copyLink: "Copier le lien",
     linkNote: "Le lien fonctionne une seule fois et expire dans quelques minutes.",
+    manualSetup: "Configuration manuelle",
     manualWorksHere:
       "La configuration manuelle fonctionne ici même, sans quitter cette fenêtre.",
   },

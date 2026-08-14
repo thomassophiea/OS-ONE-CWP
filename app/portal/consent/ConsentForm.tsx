@@ -5,6 +5,16 @@ import type { Messages } from "@/lib/i18n";
 import { format } from "@/lib/i18n";
 
 /**
+ * Only the parts of the catalogue this form renders. Props to a client
+ * component are serialised into the page; the error catalogue and the secure
+ * setup copy have no business travelling with a consent form.
+ */
+export type ConsentMessages = Pick<
+  Messages,
+  "common" | "consent" | "privacy" | "fields" | "secureOffer"
+>;
+
+/**
  * Consent form with a deliberate-action gate.
  *
  * Measured on 2026-08-07: with a single submit button and no checkbox, macOS's
@@ -55,7 +65,7 @@ export default function ConsentForm({
 }: {
   csrfToken: string;
   challenge: string;
-  messages: Messages;
+  messages: ConsentMessages;
   /**
    * The optional secure WLAN, when one is configured. Null means the second
    * option is not rendered at all — the open guest path is then byte-identical

@@ -152,7 +152,13 @@ export default async function ConsentPage({
         <ConsentForm
           csrfToken={csrfToken}
           challenge={consentChallenge(session.id)}
-          messages={messages}
+          messages={{
+            common: messages.common,
+            consent: messages.consent,
+            privacy: messages.privacy,
+            fields: messages.fields,
+            secureOffer: messages.secureOffer,
+          }}
           secureNetwork={secureNetwork}
           fields={fields}
         />

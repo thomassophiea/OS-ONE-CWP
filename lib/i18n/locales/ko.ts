@@ -118,6 +118,7 @@ export const ko: Messages = {
     stalledTitle: "열리지 않으면 이 링크를 Safari에 복사해 주십시오.",
     copyLink: "링크 복사",
     linkNote: "이 링크는 한 번만 사용할 수 있으며 몇 분 후 만료됩니다.",
+    manualSetup: "수동 설정",
     manualWorksHere: "수동 설정은 이 창을 벗어나지 않고 바로 진행할 수 있습니다.",
   },
 

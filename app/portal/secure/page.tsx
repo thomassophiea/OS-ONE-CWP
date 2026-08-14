@@ -137,7 +137,13 @@ export default async function SecurePage() {
 
         {network ? (
           <SecureSetup
-            messages={messages}
+            messages={{
+              common: messages.common,
+              secure: messages.secure,
+              handoff: messages.handoff,
+              qr: messages.qr,
+              manual: messages.manual,
+            }}
             ssid={network.ssid}
             securityLabel={
               messages.security[network.security as keyof Messages["security"]] ??

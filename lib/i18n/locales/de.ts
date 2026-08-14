@@ -122,6 +122,7 @@ export const de: Messages = {
     stalledTitle: "Nichts passiert? Kopieren Sie diesen Link in Safari.",
     copyLink: "Link kopieren",
     linkNote: "Der Link funktioniert einmal und läuft in wenigen Minuten ab.",
+    manualSetup: "Manuelle Einrichtung",
     manualWorksHere:
       "Die manuelle Einrichtung funktioniert direkt hier, ohne dieses Fenster zu verlassen.",
   },
