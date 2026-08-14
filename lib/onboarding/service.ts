@@ -152,6 +152,38 @@ export async function authorizeOnboarding(
   return record;
 }
 
+/**
+ * The live onboarding this browser is already in the middle of, if any.
+ *
+ * Keyed on the token the browser still holds rather than on the guest session
+ * alone: the token is what proves this browser started it, and it survives a
+ * reload because it lives in an HttpOnly cookie. The guest-session match is
+ * checked as well, so a token cannot pull in an onboarding that belongs to a
+ * different visit.
+ *
+ * Terminal sessions are deliberately not resumed — a failed or expired
+ * onboarding should start again rather than reappear stuck.
+ */
+export async function liveOnboardingFor(
+  sessionId: string,
+  token: string | null | undefined
+): Promise<OnboardingSession | null> {
+  if (!token) return null;
+  try {
+    const record = await prisma.onboardingSession.findUnique({
+      where: { tokenHash: hashOnboardingToken(token) },
+    });
+    if (!record) return null;
+    if (record.sessionId !== sessionId) return null;
+    if (record.expiresAt.getTime() <= Date.now()) return null;
+    if (record.status === "FAILED" || record.status === "EXPIRED") return null;
+    return record;
+  } catch (err) {
+    log.error("onboarding_resume_lookup_failed", { err });
+    return null;
+  }
+}
+
 /** Record that a provisioning artifact was handed over. Never sets COMPLETED. */
 export async function recordArtifact(
   record: OnboardingSession,

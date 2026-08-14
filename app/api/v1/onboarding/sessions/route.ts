@@ -12,7 +12,7 @@ import {
 } from "@/lib/onboarding/platform";
 import { planFor } from "@/lib/onboarding/methods";
 import { networkCapabilities, secureOnboardingConfigured } from "@/lib/onboarding/providers/skynet";
-import { createOnboarding } from "@/lib/onboarding/service";
+import { createOnboarding, liveOnboardingFor } from "@/lib/onboarding/service";
 import { toOnboardingView } from "@/lib/onboarding/serialize";
 import { routeLocale } from "@/lib/i18n/server";
 import {
@@ -120,6 +120,38 @@ export async function POST(request: NextRequest) {
       422,
       "unsupported_platform",
       messages.api.unsupportedPlatform
+    );
+  }
+
+  // Resume rather than replace.
+  //
+  // A page that can be refreshed must not mint a new onboarding session every
+  // time it loads. The guest who installed the profile, watched their device
+  // switch and came back would otherwise arrive at a brand-new record that has
+  // never been handed anything and has never been confirmed — losing exactly
+  // the state they returned to see.
+  //
+  // The browser still holds the token from the first load, so if it resolves to
+  // a live onboarding belonging to this same guest, that *is* the onboarding.
+  // Returned as-is with no new cookie: the raw token was never stored and
+  // cannot be reissued, and the browser does not need it to be.
+  const resumed = await liveOnboardingFor(
+    session.id,
+    request.cookies.get(ONBOARDING_COOKIE)?.value
+  );
+  if (resumed) {
+    const plan = planFor(resumed.platform as Platform, capabilities.network);
+    log.info("onboarding_resumed", {
+      onboardingSessionId: resumed.id,
+      sessionId: session.id,
+      status: resumed.status,
+    });
+    return NextResponse.json(
+      {
+        onboarding: toOnboardingView(resumed, capabilities.network, plan, messages),
+        captiveAssistant: verdict.captiveAssistant,
+      },
+      { status: 200, headers: NO_STORE_HEADERS }
     );
   }
 
