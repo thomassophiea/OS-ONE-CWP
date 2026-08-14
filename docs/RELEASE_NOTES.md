@@ -8,6 +8,140 @@ covered by that generator, so its notes live here.
 
 ---
 
+## Integration — 2026-08-14 (d) · Storage prohibition and eight languages
+
+Deployed to **AURA Integration**. Production untouched.
+
+### User experience
+
+- **"Do not store my personal data"** on the consent form, unticked by default.
+  Ticking it means what it says: nothing the guest typed about themselves is
+  written anywhere, and they still get online in the same number of taps.
+- **Eight languages** — English, Spanish, French, German, Portuguese, Simplified
+  Chinese, Japanese, Korean — covering the entire guest experience, not the
+  landing page. A visible selector, labelled in each language's own name, lets a
+  guest override detection at any point before finishing.
+- **Optional name, email and phone fields**, off by default and configurable per
+  deployment.
+
+### The prohibition, and why it is not a preference
+
+Three properties, each verifiable:
+
+**Decided on the server.** The checkbox posts like any field and can be forged
+or omitted. What is authoritative is `GuestSession.personalDataAllowed`, written
+once at consent time and read by every later write. Hiding inputs in a browser
+is presentation, not enforcement.
+
+**Prevents the write rather than cleaning up after it.** No deferred deletion,
+no redaction pass. Values are stripped before a query is built, so prohibited
+data never exists in the table, a WAL segment, a backup taken in between, or a
+replica — none of which a later `DELETE` reaches.
+
+**Separates operational from personal explicitly.** MAC, AP, gateway token and
+timestamps are how the network functions and are always kept. What the guest
+typed about themselves is what the prohibition covers, and one flag in the field
+registry is where that judgement lives.
+
+The guest-ledger row is still created — it is the standing record of which
+*device* may use the network, and what revocation acts on. It simply carries
+nobody's name.
+
+### Guest-field registry
+
+Fields are declared once and read by the form, the catalogues, validation, the
+API, the ledger mapping and the privacy filter. Adding one is a single entry
+plus its label in the eight catalogues; it is then automatically rendered,
+localised, validated, covered by the prohibition and excluded from logs. New
+fields default to `personal: true`.
+
+Nothing is collected unless `GUEST_FIELDS_ENABLED` says so.
+
+### Logging
+
+Personal keys are redacted **unconditionally**, not only under a prohibition.
+Conditional redaction would require the logger to know whose line it was, and
+the one call site that forgot would be the leak. Audit events record *that* the
+control was exercised — `personalDataPersistence: PROHIBITED`,
+`guestFieldsStored: 0` — because that is the only evidence it was honoured.
+
+### Localisation
+
+`Messages` is inferred from the English catalogue, so a missing key in a
+translation is a build error rather than a string that renders in English in
+Osaka. Adding a language is a catalogue file plus one registry row.
+
+Detection: stored choice, then `Accept-Language` with q-values honoured, then
+English. Never geolocation. `pt-BR`, `fr-CA` and `es-419` reach their base
+language; `zh-TW` deliberately does **not** match Simplified, because serving it
+to a Traditional reader is a worse answer than English.
+
+SSIDs, security modes, `netsh`, `Settings` and file names stay untranslated in
+every catalogue — a guest has to find them on their own screen.
+
+### Database
+
+Migrations `20260814230000_privacy_and_guest_fields` and
+`20260814235000_capport_token_not_unique`, both applied with no drift.
+`personalDataAllowed` defaults to true so every pre-existing row keeps the
+meaning it had; marking them retroactively prohibited would claim a choice
+nobody made.
+
+### Three defects found and fixed during validation
+
+**A returning guest could not get online.** The CAPPORT per-client token is an
+HMAC of the station MAC — deliberately stable across visits — but was indexed as
+UNIQUE. The second session for any device collided on insert and the visit ended
+on "the portal is temporarily unavailable". The first visit by any device looked
+perfect, so it surfaced only on the second run of the suite against the same
+MACs.
+
+**Stored fields never reached the ledger.** The policy travelled to the ledger
+write but the values did not, so a guest who permitted persistence had their
+details written to the session and silently dropped from the guest record —
+visible only by querying both.
+
+**The poll counter was right in Postgres and wrong in the answer.** When the
+gateway was unreachable, the count was incremented and then the pre-increment
+record returned, so a caller watching the budget saw it stay at zero.
+
+Also: the privacy control had landed between the terms and the checkbox reading
+"the terms of use **above**", and both client components were shipping the entire
+message catalogue — including every error string — into the page.
+
+### Testing
+
+- **289 unit tests**, including catalogue completeness for all eight locales:
+  key parity, no empty values, placeholders preserved, nothing left in English,
+  and device-facing identifiers untranslated.
+- **50 live checks** against the deployed build and the real database, ending in
+  a **search of every text and JSON column of every table for the exact strings
+  submitted**. Zero hits under a prohibition; the same values *are* found when
+  the box is unticked, which is what proves the prohibition is doing the
+  suppressing.
+- **94 browser checks** across all eight languages on an iPhone viewport: no
+  horizontal overflow, nothing clipped, no console errors, native-name selector,
+  and a mid-flow language switch surviving the gateway redirect.
+- **Runtime logs searched** for every submitted value, permitted and prohibited
+  alike. Zero occurrences.
+- Existing suites re-run green: 89 portal, 42 hand-off, 34 CAPPORT, 87 browser.
+
+### Known limitations
+
+- **The lab controller was offline for the final pass** (`tsophiea.ddns.net`
+  timing out, proxy answering 500). Gateway-confirmed join verification could
+  not be re-run and is unverified for this build; it passed on the previous one
+  and its code path is unchanged. Everything else was verified with the
+  controller down, which incidentally proved the `SECURE_WLAN_PSK` fallback: both
+  workflows, the privacy control, secure onboarding, credential retrieval and
+  Apple profile generation all worked with no gateway at all.
+- Under a prohibition, values are not echoed back after a failed validation, so a
+  guest retypes. A URL ends up in history, and honouring the prohibition
+  everywhere except where the guest can see it would be the wrong trade.
+- Traditional Chinese falls back to English by design.
+
+---
+
 ## Integration — 2026-08-14 (b) · Captive-assistant hand-off fix
 
 Deployed to **AURA Integration**. Fixes a defect in the entry above, found on a
