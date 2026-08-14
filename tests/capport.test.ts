@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { GuestSession } from "@prisma/client";
+import { capportTokenForMac } from "@/lib/capport/resolve";
 import {
   CAPPORT_CACHE_CONTROL,
   CAPPORT_CONTENT_TYPE,
@@ -130,5 +131,37 @@ describe("an unidentified client", () => {
     const doc = unidentifiedState(context);
     expect(doc["seconds-remaining"]).toBeUndefined();
     expect(doc["venue-info-url"]).toBeUndefined();
+  });
+});
+
+describe("the per-client token across visits", () => {
+  it("is derived from the MAC, so it is the same on every visit", () => {
+    // This is the property that makes DHCP provisioning possible: the network
+    // computes the URI without ever talking to the portal. It also means the
+    // value cannot be treated as unique per session — a returning guest would
+    // collide on insert and be told the portal is unavailable, which is exactly
+    // what happened before `capportTokenHash` stopped being a unique index.
+    process.env.CAPPORT_TOKEN_SECRET = "test-secret-for-derivation";
+    const first = capportTokenForMac("aa:bb:cc:dd:ee:ff");
+    const second = capportTokenForMac("aa:bb:cc:dd:ee:ff");
+    expect(first).toBe(second);
+    expect(first).not.toBeNull();
+  });
+
+  it("normalises case, so the same device is one token", () => {
+    process.env.CAPPORT_TOKEN_SECRET = "test-secret-for-derivation";
+    expect(capportTokenForMac("AA:BB:CC:DD:EE:FF")).toBe(capportTokenForMac("aa:bb:cc:dd:ee:ff"));
+  });
+
+  it("differs between devices", () => {
+    process.env.CAPPORT_TOKEN_SECRET = "test-secret-for-derivation";
+    expect(capportTokenForMac("aa:bb:cc:dd:ee:ff")).not.toBe(
+      capportTokenForMac("aa:bb:cc:dd:ee:01")
+    );
+  });
+
+  it("is unavailable rather than guessable when no secret is configured", () => {
+    delete process.env.CAPPORT_TOKEN_SECRET;
+    expect(capportTokenForMac("aa:bb:cc:dd:ee:ff")).toBeNull();
   });
 });

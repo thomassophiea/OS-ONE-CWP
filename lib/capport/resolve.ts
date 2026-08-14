@@ -70,12 +70,21 @@ export function capportTokenMatches(
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-/** RFC 8908 §4's per-client URI. The most certain identification available. */
+/**
+ * RFC 8908 §4's per-client URI. The most certain identification available.
+ *
+ * The most *recent* session for the device, not a unique one. The token is
+ * derived from the MAC and is therefore stable across visits — which is the
+ * property that makes DHCP provisioning possible at all — so a device that
+ * reconnects has several sessions carrying it. The current one is the only
+ * honest answer to "am I captive right now?".
+ */
 export async function bySessionToken(token: string): Promise<GuestSession | null> {
   if (!token) return null;
   try {
-    return await prisma.guestSession.findUnique({
+    return await prisma.guestSession.findFirst({
       where: { capportTokenHash: hashCapportToken(token) },
+      orderBy: { createdAt: "desc" },
     });
   } catch (err) {
     log.error("capport_token_lookup_failed", { err });

@@ -203,7 +203,14 @@ model GuestSession {
   /// Deliberately not the session cookie: this token is read-only. It can
   /// produce a captive-state document and nothing else — it cannot authorize,
   /// cannot reveal a credential, and never sets a cookie.
-  capportTokenHash String? @unique
+  ///
+  /// **Not unique.** The token is derived from the station MAC, so every visit
+  /// by the same device produces the same value — a unique index here made a
+  /// guest's second connection fail outright, because the insert collided and
+  /// the portal reported the session as unavailable. It identifies a *device*
+  /// across visits, which is what the Captive Portal API needs to answer
+  /// about, so the lookup takes the most recent session instead.
+  capportTokenHash String?
 
   // ---- authorization exchange ----
   authorizationAttemptedAt DateTime?
@@ -233,6 +240,7 @@ model GuestSession {
   // Operators need "how many guests exercised the storage control?" without a
   // full scan; it is the only question this flag is ever aggregated for.
   @@index([personalDataAllowed])
+  @@index([capportTokenHash])
 }
 
 model AuditEvent {
