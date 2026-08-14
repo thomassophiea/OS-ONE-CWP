@@ -38,6 +38,23 @@ station ──── AURA-CWP WLAN ──── AP5020 ──── XCC 192.168.
 | `XCC_IDENTITY` | must equal the gateway role's `cpIdentity` |
 | `XCC_SHARED_SECRET` | must equal the gateway role's `cpSharedKey` |
 | `XCC_ALLOWED_GATEWAY_HOSTS` | `apcp.ezcloudx.com,192.168.100.12` |
+
+### Secure Guest Access (optional)
+
+Every variable below is optional. With all of them absent the portal offers the
+open guest workflow and nothing else — which is exactly the behaviour that
+existed before the feature. See [SECURE_ONBOARDING.md](SECURE_ONBOARDING.md).
+
+| Variable | Value |
+|---|---|
+| `SECURE_WLAN_SSID` | `Skynet` |
+| `SECURE_WLAN_SERVICE_ID` | `c8d4880b-2a54-424e-9459-46c02425f587` |
+| `SECURE_WLAN_PSK` | fallback only — the gateway is the source of truth |
+| `GATEWAY_API_BASE_URL` | `https://integration.up.railway.app/api/management` |
+| `GATEWAY_CONTROLLER_URL` | `https://tsophiea.ddns.net:443` |
+| `GATEWAY_USERNAME` / `GATEWAY_PASSWORD` | controller credentials, read-only use |
+| `ONBOARDING_TTL_SECONDS` | `1800` |
+| `ONBOARDING_MAX_CHECKS` | `60` |
 | `SESSION_SECRET` | 32-byte random hex |
 | `PORTAL_SESSION_TTL_SECONDS` | `900` |
 | `ECP_APPROVAL_TTL_SECONDS` | `60` |

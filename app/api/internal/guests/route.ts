@@ -20,10 +20,18 @@ export async function GET(request: NextRequest) {
 
   try {
     const now = new Date();
-    const { guests, lastSessions, nextCursor, total } = await listGuests(parsed.filter, now);
+    const { guests, lastSessions, lastOnboardings, nextCursor, total } = await listGuests(
+      parsed.filter,
+      now
+    );
     return NextResponse.json({
       guests: guests.map((guest) =>
-        toGuestDto(guest, now, lastSessions.get(guest.macAddress) ?? null)
+        toGuestDto(
+          guest,
+          now,
+          lastSessions.get(guest.macAddress) ?? null,
+          lastOnboardings.get(guest.macAddress) ?? null
+        )
       ),
       nextCursor,
       total,

@@ -7,7 +7,11 @@
  */
 
 import type { GuestAuthorization } from "@prisma/client";
-import { effectiveStatus, type LastSessionSummary } from "@/lib/guests/repository";
+import {
+  effectiveStatus,
+  type LastOnboardingSummary,
+  type LastSessionSummary,
+} from "@/lib/guests/repository";
 
 export interface GuestDto {
   id: string;
@@ -41,6 +45,24 @@ export interface GuestDto {
   lastSessionFailureReason: string | null;
   /** IP the portal saw, used only when the gateway has no live answer. */
   lastKnownIp: string | null;
+  /**
+   * Most recent secure-onboarding attempt, or null when this guest never asked
+   * for one — which is the normal case, since it is opt-in. `status` is the
+   * onboarding lifecycle, not the guest's authorization: COMPLETED here means
+   * the gateway saw the device on the secure WLAN, nothing more and nothing
+   * less.
+   */
+  secureOnboarding: {
+    id: string;
+    status: string;
+    method: string | null;
+    platform: string;
+    sourceSsid: string | null;
+    targetSsid: string;
+    startedAt: string;
+    completedAt: string | null;
+    failureReason: string | null;
+  } | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -50,7 +72,8 @@ const iso = (value: Date | null) => (value ? value.toISOString() : null);
 export function toGuestDto(
   guest: GuestAuthorization,
   now = new Date(),
-  lastSession: LastSessionSummary | null = null
+  lastSession: LastSessionSummary | null = null,
+  lastOnboarding: LastOnboardingSummary | null = null
 ): GuestDto {
   return {
     id: guest.id,
@@ -80,6 +103,19 @@ export function toGuestDto(
     lastSessionAt: iso(lastSession?.createdAt ?? null),
     lastSessionFailureReason: lastSession?.failureReason ?? null,
     lastKnownIp: lastSession?.clientIp ?? null,
+    secureOnboarding: lastOnboarding
+      ? {
+          id: lastOnboarding.id,
+          status: lastOnboarding.status,
+          method: lastOnboarding.method,
+          platform: lastOnboarding.platform,
+          sourceSsid: lastOnboarding.sourceSsid,
+          targetSsid: lastOnboarding.targetSsid,
+          startedAt: lastOnboarding.createdAt.toISOString(),
+          completedAt: iso(lastOnboarding.completedAt),
+          failureReason: lastOnboarding.failureReason,
+        }
+      : null,
     createdAt: guest.createdAt.toISOString(),
     updatedAt: guest.updatedAt.toISOString(),
   };

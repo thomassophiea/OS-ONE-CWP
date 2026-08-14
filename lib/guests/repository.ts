@@ -77,6 +77,8 @@ export interface ListGuestsResult {
   guests: GuestAuthorization[];
   /** Canonical MAC → most recent session. Absent for devices with no visits. */
   lastSessions: Map<string, LastSessionSummary>;
+  /** Canonical MAC → most recent secure-onboarding attempt. Usually sparse. */
+  lastOnboardings: Map<string, LastOnboardingSummary>;
   nextCursor: string | null;
   total: number;
 }
@@ -206,9 +208,15 @@ export async function listGuests(
 
   const hasMore = rows.length > limit;
   const guests = hasMore ? rows.slice(0, limit) : rows;
+  const macs = guests.map((g) => g.macAddress);
+  const [lastSessions, lastOnboardings] = await Promise.all([
+    lastSessionsFor(macs),
+    lastOnboardingsFor(macs),
+  ]);
   return {
     guests,
-    lastSessions: await lastSessionsFor(guests.map((g) => g.macAddress)),
+    lastSessions,
+    lastOnboardings,
     nextCursor: hasMore ? guests[guests.length - 1].id : null,
     total,
   };
@@ -470,4 +478,65 @@ export async function markExpired(now = new Date()): Promise<number> {
     data: { status: "EXPIRED" },
   });
   return count;
+}
+
+/**
+ * Most recent secure-onboarding attempt per MAC.
+ *
+ * Shaped exactly like `lastSessionsFor`: one query for the page being
+ * returned, never a per-row fan-out. Most guests will have no row at all —
+ * secure onboarding is opt-in — so the map is usually sparse, and a missing
+ * entry means "this guest never asked", not "we don't know".
+ */
+export interface LastOnboardingSummary {
+  id: string;
+  status: string;
+  method: string | null;
+  platform: string;
+  targetSsid: string;
+  sourceSsid: string | null;
+  createdAt: Date;
+  completedAt: Date | null;
+  failureReason: string | null;
+}
+
+export async function lastOnboardingsFor(
+  macs: string[]
+): Promise<Map<string, LastOnboardingSummary>> {
+  const out = new Map<string, LastOnboardingSummary>();
+  if (macs.length === 0) return out;
+
+  const rows = await prisma.onboardingSession.findMany({
+    where: { clientMac: { in: macs } },
+    distinct: ["clientMac"],
+    orderBy: [{ clientMac: "asc" }, { createdAt: "desc" }],
+    select: {
+      id: true,
+      clientMac: true,
+      status: true,
+      method: true,
+      platform: true,
+      targetSsid: true,
+      sourceSsid: true,
+      createdAt: true,
+      completedAt: true,
+      failureReason: true,
+    },
+  });
+
+  for (const row of rows) {
+    if (!row.clientMac) continue;
+    out.set(row.clientMac, {
+      id: row.id,
+      status: row.status,
+      method: row.method,
+      platform: row.platform,
+      targetSsid: row.targetSsid,
+      sourceSsid: row.sourceSsid,
+      createdAt: row.createdAt,
+      completedAt: row.completedAt,
+      failureReason: row.failureReason,
+    });
+  }
+  return out;
 }
