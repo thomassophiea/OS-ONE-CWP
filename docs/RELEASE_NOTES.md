@@ -8,6 +8,98 @@ covered by that generator, so its notes live here.
 
 ---
 
+## Integration — 2026-08-14 (b) · Captive-assistant hand-off fix
+
+Deployed to **AURA Integration**. Fixes a defect in the entry above, found on a
+real Mac within the hour. Production was never affected — it does not have this
+feature.
+
+### What was broken
+
+*Open in Safari* opened Safari and landed the guest on **"Your session has
+ended."**
+
+The URL scheme was never the problem. `x-safari-https:` is registered by Safari
+on both iOS and macOS and the hand-off fired correctly. The failure was on the
+other side of it: the Captive Network Assistant and Safari are separate
+applications with **separate cookie stores**, so the browser that opened had no
+`cwp_session` cookie and `/portal/secure` refused it. Confirmed against a session
+seconds old and fully authorized — 200 with the assistant's cookie,
+`no_session` from any other jar. iOS behaves identically, so the iPhone flow was
+walking into the same wall.
+
+The original design assumed cookie continuity across that boundary. It does not
+exist.
+
+### What changed
+
+The hand-off link now carries a single-use token, redeemed by a new route:
+
+```
+/portal/continue?h=<token>  ->  sets cwp_session  ->  303 /portal/secure
+```
+
+- 32 random bytes, stored only as SHA-256, valid ten minutes, good for exactly
+  one redemption. Burnt by a single conditional `UPDATE` against a unique index,
+  so two tabs cannot both win a read-then-write race.
+- Grants one thing: the session cookie for a session the gateway has already
+  authorized. It is **not** the onboarding token and opens no credential-bearing
+  endpoint; the onboarding session is minted fresh in the new browser.
+- A route handler, not a page, so it can set a cookie, redirect the token out of
+  the address bar on the next paint, and send `Referrer-Policy: no-referrer`.
+- Redemption restarts the session clock — otherwise a guest who read the
+  instructions for a few minutes arrived in Safari and was told their session had
+  ended, the same failure through a different door.
+- Redemptions and replays are audited with their source address. The token is
+  never logged.
+- If the page is still visible 2.5s after the tap, the scheme did not fire on
+  that build and the plain `https://` link is revealed to copy by hand.
+
+Also fixed: the assistant was detected from `session.userAgent` — whichever
+browser *started* the visit — so Safari looked like an assistant, minted a
+hand-off link it had no use for, and overwrote the token it had just redeemed.
+Detection now reads the user agent of the request being served. Neither form was
+a security hole (an overwritten hash can never match again), but the replay
+reported "invalid" rather than "already used" and put a token in a page that did
+not need one.
+
+### Database
+
+Migration `20260814200000_captive_assistant_handoff`, additive, applied with no
+drift. Four nullable columns on `GuestSession` — `handoffTokenHash` (unique),
+`handoffExpiresAt`, `handoffUsedAt`, `handoffUsedIp`.
+
+### Testing
+
+- **42 live checks** across the real boundary: the portal flow runs in one cookie
+  jar with the assistant's user agent, and the link is redeemed from a **second,
+  empty jar** with a Safari user agent. Sharing a jar would test nothing. All
+  passing, including the original bug asserted as still-reproducible without the
+  token, single-use enforcement, forged/empty/absent tokens, `no-referrer` and
+  `no-store` headers, and the iPhone equivalent.
+- Existing suites re-run: 187 unit, 89 live API, 84 real-browser, 10 gateway —
+  all passing. One transient failure of the gateway-poll assertion did not
+  reproduce across three consecutive runs and is attributed to controller
+  latency.
+- Log audit: no token, no `?h=` value, and no credential in build or runtime
+  logs.
+- **The open guest path is asserted unchanged** in the same run: consent still
+  offers *Connect to the Internet*, the approval URL is still issued, the guest
+  still lands on the confirmation page and is forwarded to their original
+  destination, and no hand-off token is minted on that path at all.
+
+### Known limitations
+
+- The hand-off link is valid for ten minutes and works once. A guest who reloads
+  the setup page inside the assistant invalidates the previous link; tapping the
+  stale one reports "This setup link has expired", which is accurate.
+- The exposure is a token in a link on the guest's own screen, leading to a
+  **shared** Wi-Fi passphrase every other guest also has. Single use plus a short
+  window is proportionate to that; the source address of each redemption is
+  recorded so an unexpected one is visible afterwards.
+
+---
+
 ## Integration — 2026-08-14 · Secure Guest Access
 
 Deployed to **AURA Integration** (`os-one-cwp-production.up.railway.app`).

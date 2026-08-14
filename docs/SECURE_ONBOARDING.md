@@ -93,15 +93,73 @@ not browsers. The assistant cannot install a configuration profile and cannot
 reach Settings.
 
 It is detected server-side by the same signature `lib/captive/safeRedirect.ts`
-already uses — bare `AppleWebKit/…` with no product token — and reported to the
-page as `captiveAssistant`. On an Apple device the page then leads with getting
-out of it:
+already uses — bare `AppleWebKit/…` with no product token — read from the
+**request being served**, not from `session.userAgent`, which holds whichever
+browser started the visit. On an Apple device the page then leads with getting
+out of the assistant.
 
-- **Open in Safari** — an `x-safari-https://…` link, the scheme iOS uses to hand
-  a URL from an embedded webview to full Safari. It is not guaranteed on every
-  iOS build, so the plain link sits underneath it.
-- **Manual Setup**, beside it, which needs neither Safari nor Settings and
-  therefore works inside the assistant.
+### The cookie boundary, and why a plain link is not enough
+
+Measured on macOS on 2026-08-14, after the first version of this shipped and
+failed on a real Mac.
+
+`x-safari-https://` works. It is registered by Safari on **both** iOS and macOS
+(`lsregister -dump` lists it under Safari's claimed schemes), and tapping the
+link does open Safari. The failure was on the other side: Safari loaded
+`/portal/secure` and rendered **"Your session has ended"**.
+
+The assistant and Safari are separate applications with separate cookie stores.
+The `cwp_session` cookie lives in the assistant's jar; Safari has its own, so
+the page it opened could not see any session at all. Verified directly against a
+session seconds old and fully `AUTHORIZED`:
+
+```
+GET /portal/secure  with the assistant's cookie   -> 200, renders
+GET /portal/secure  from any other cookie jar     -> 307 /portal/error?code=no_session
+```
+
+A cookie cannot cross that boundary, so something in the URL has to. The
+hand-off link carries a **single-use token**:
+
+```
+x-safari-https://…/portal/continue?h=<token>
+        │
+        ├─ redeem: burnt by one conditional UPDATE on a unique index
+        ├─ set cwp_session for this browser, and restart the session clock
+        └─ 303 -> /portal/secure          (token gone from the address bar)
+```
+
+`/portal/continue` is a route handler rather than a page for three reasons that
+all matter: it can set a cookie, it can redirect so the token leaves the address
+bar on the next paint instead of sitting in history and in every subsequent
+referrer, and it can send `Referrer-Policy: no-referrer` so it cannot leak that
+way either.
+
+The token is 32 random bytes, stored only as SHA-256, valid for ten minutes, and
+good for exactly one redemption. It grants **one** thing: the session cookie for
+a session the gateway has already authorized. It is not the onboarding token and
+opens no credential-bearing endpoint — the onboarding session and its own
+HttpOnly token are minted fresh in the new browser through the ordinary path.
+Redemptions are audited with their source address; the token itself is never
+logged.
+
+The burn is a single conditional `updateMany`, not a read followed by a write:
+two tabs redeeming the same link at the same moment would both pass a read.
+
+Restarting the session clock on redemption is not incidental. Without it, a
+guest who spent a few minutes reading before tapping would arrive in Safari and
+be told their session had ended — the same failure this mechanism exists to
+remove, coming back through a different door.
+
+### What the guest sees
+
+- **Open in Safari** — the hand-off link.
+- If the page is still visible 2.5 seconds after the tap, the scheme did not
+  fire on this build, and the plain `https://` link is revealed to copy by hand.
+  A link that silently does nothing is worse than no link.
+- **Manual Setup**, throughout, which needs neither Safari nor Settings and
+  therefore works inside the assistant. It is what actually got used when the
+  hand-off was broken.
 
 Once the gateway has authorized the station, the assistant may close itself
 because connectivity is restored. The guest is already online when that happens;
@@ -124,6 +182,10 @@ therefore never sufficient on its own.
 | `GET` | `/sessions/{id}/qr` | Wi-Fi QR as SVG. |
 | `POST` | `/sessions/{id}/credential` | Reveal the passphrase for manual entry. |
 | `GET` | `/sessions/{id}/status` | Ask the gateway whether the device joined. |
+
+One route sits outside that group: `GET /portal/continue?h=<token>` redeems a
+captive-assistant hand-off. It is not under `/api` because it is a navigation
+target, not an API call.
 
 `/profile` and `/windows-profile` are `GET` because iOS will only hand a
 `.mobileconfig` to Settings on a top-level navigation — a `fetch()` body cannot
