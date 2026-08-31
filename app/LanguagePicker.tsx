@@ -22,9 +22,12 @@ import { LOCALES, LOCALE_COOKIE_MAX_AGE } from "@/lib/i18n";
 export default function LanguagePicker({
   current,
   label,
+  locales,
 }: {
   current: string;
   label: string;
+  /** The offered subset, from the resolution. Defaults to all shipped locales. */
+  locales?: ReadonlyArray<{ code: string; nativeName: string }>;
 }) {
   const [pending, startTransition] = useTransition();
   const [value, setValue] = useState(current);
@@ -52,7 +55,7 @@ export default function LanguagePicker({
         onChange={(event) => change(event.target.value)}
         className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs text-slate-800 disabled:opacity-60"
       >
-        {LOCALES.map((locale) => (
+        {(locales ?? LOCALES).map((locale) => (
           <option key={locale.code} value={locale.code} lang={locale.code}>
             {locale.nativeName}
           </option>

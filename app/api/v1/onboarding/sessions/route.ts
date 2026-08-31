@@ -42,7 +42,7 @@ export const dynamic = "force-dynamic";
  * It never carries credential material; that has its own endpoint.
  */
 export async function POST(request: NextRequest) {
-  const { messages } = routeLocale(request);
+  const { messages } = await routeLocale(request);
 
   if (!hostIsAllowed(request.headers.get("host"), allowedHosts())) {
     return new NextResponse("Not found", { status: 404 });

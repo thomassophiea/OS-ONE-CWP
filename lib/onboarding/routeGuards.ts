@@ -83,7 +83,7 @@ export async function guardOnboarding(
     return new NextResponse("Not found", { status: 404 });
   }
 
-  const { messages } = routeLocale(request);
+  const { messages } = await routeLocale(request);
 
   const token = request.cookies.get(ONBOARDING_COOKIE)?.value ?? null;
   if (!token) {

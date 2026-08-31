@@ -28,7 +28,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const { messages } = routeLocale(request);
+  const { messages } = await routeLocale(request);
   const guard = await guardOnboarding(request, id, { limit: 10 });
   if (guard instanceof NextResponse) return guard;
   const { record } = guard;

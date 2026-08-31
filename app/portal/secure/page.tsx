@@ -7,11 +7,14 @@ import { isExpired } from "@/lib/session/repository";
 import { looksLikeCaptiveAssistant, toAbsoluteDestination } from "@/lib/captive/safeRedirect";
 import { appBaseUrl } from "@/lib/env";
 import { networkCapabilities } from "@/lib/onboarding/providers/skynet";
-import { effectiveSecureAccess } from "@/lib/config/portal";
+import {
+  effectiveBranding,
+ effectiveSecureAccess } from "@/lib/config/portal";
 import { issueHandoffToken } from "@/lib/onboarding/handoff";
 import { requestLocale } from "@/lib/i18n/server";
 import { format, type Messages } from "@/lib/i18n";
 import LanguagePicker from "@/app/LanguagePicker";
+import PortalFooter from "@/app/PortalFooter";
 import SecureSetup from "./SecureSetup";
 
 export const runtime = "nodejs";
@@ -32,7 +35,8 @@ export const dynamic = "force-dynamic";
 export default async function SecurePage() {
   const jar = await cookies();
   const sessionId = readSessionCookie(jar.get(SESSION_COOKIE)?.value);
-  const { locale, definition, messages } = await requestLocale();
+  const { locale, definition, messages, offered } = await requestLocale();
+  const branding = await effectiveBranding();
   if (!sessionId) redirect("/portal/error?code=no_session");
 
   let session;
@@ -105,7 +109,7 @@ export default async function SecurePage() {
     >
       <div className="w-full max-w-md space-y-4">
         <div className="rounded-2xl bg-white px-4 py-2 shadow-sm">
-          <LanguagePicker current={locale} label={messages.common.languageLabel} />
+          <LanguagePicker current={locale} label={messages.common.languageLabel} locales={offered} />
         </div>
 
         {/* Said first and said plainly: the guest is already online. Secure
@@ -168,7 +172,7 @@ export default async function SecurePage() {
           </div>
         )}
 
-        <p className="text-center text-xs text-slate-400">{messages.common.portalName}</p>
+        <PortalFooter branding={branding} portalName={messages.common.portalName} className="text-center text-xs" />
       </div>
     </main>
   );

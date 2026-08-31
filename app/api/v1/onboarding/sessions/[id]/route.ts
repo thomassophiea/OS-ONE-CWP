@@ -16,7 +16,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const { messages } = routeLocale(request);
+  const { messages } = await routeLocale(request);
   const guard = await guardOnboarding(request, id, { limit: 60 });
   if (guard instanceof NextResponse) return guard;
 

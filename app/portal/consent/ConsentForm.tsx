@@ -64,6 +64,9 @@ export default function ConsentForm({
   sponsorship,
   fields,
   openPath = true,
+  brandColor,
+  privacyPolicy,
+  marketing,
 }: {
   csrfToken: string;
   challenge: string;
@@ -89,10 +92,20 @@ export default function ConsentForm({
    * open submit button is then not drawn, and the server refuses the mode.
    */
   openPath?: boolean;
+  /** Operator brand colour for the primary action. Server-validated ≥4.5:1 on white. */
+  brandColor?: string;
+  /**
+   * A second REQUIRED tick when the operator requires privacy terms. Null =
+   * not asked, and the form is byte-identical to before.
+   */
+  privacyPolicy?: { text: string } | null;
+  /** An OPTIONAL marketing tick. Never gates the submit. Null = not asked. */
+  marketing?: { text: string } | null;
 }) {
   const [agreed, setAgreed] = useState(false);
   const [gestured, setGestured] = useState(false);
   const [doNotStore, setDoNotStore] = useState(false);
+  const [privacyAgreed, setPrivacyAgreed] = useState(false);
   const mountedAt = useRef(0);
   const [dwellMs, setDwellMs] = useState(0);
 
@@ -105,7 +118,7 @@ export default function ConsentForm({
     setDwellMs(Date.now() - mountedAt.current);
   };
 
-  const ready = agreed && gestured;
+  const ready = agreed && gestured && (!privacyPolicy || privacyAgreed);
 
   return (
     <form method="POST" action="/api/accept">
@@ -177,6 +190,25 @@ export default function ConsentForm({
         <span className="text-sm text-slate-700">{messages.consent.agree}</span>
       </label>
 
+      {privacyPolicy && (
+        <label className="mb-5 flex cursor-pointer select-none items-start gap-3">
+          <input
+            type="checkbox"
+            name="agreePrivacy"
+            value="yes"
+            checked={privacyAgreed}
+            onPointerDown={noteGesture}
+            onKeyDown={noteGesture}
+            onChange={(e) => {
+              noteGesture();
+              setPrivacyAgreed(e.target.checked);
+            }}
+            className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 text-blue-600"
+          />
+          <span className="text-sm text-slate-700">{privacyPolicy.text}</span>
+        </label>
+      )}
+
       {/* The storage prohibition, placed last so it is the final thing weighed
           before submitting — and after the agreement, so "the terms of use
           above" refers to the terms and nothing in between.
@@ -215,6 +247,20 @@ export default function ConsentForm({
         )}
       </div>
 
+      {marketing && (
+        <label className="mb-5 flex cursor-pointer select-none items-start gap-3">
+          <input
+            type="checkbox"
+            name="marketingConsent"
+            value="yes"
+            onPointerDown={noteGesture}
+            onKeyDown={noteGesture}
+            className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 text-blue-600"
+          />
+          <span className="text-xs text-slate-500">{marketing.text}</span>
+        </label>
+      )}
+
       {/* The open guest path. Unchanged: same name, same position, same submit,
           same handler. Everything below it is additive. Not drawn under the
           sponsored acceptance policy, where approval is the only way on. */}
@@ -226,7 +272,8 @@ export default function ConsentForm({
           disabled={!ready}
           onPointerDown={noteGesture}
           onKeyDown={noteGesture}
-          className="w-full rounded-xl py-3 font-semibold text-sm transition-colors bg-blue-600 text-white hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed"
+          style={ready && brandColor ? { backgroundColor: brandColor } : undefined}
+          className="w-full rounded-xl py-3 font-semibold text-sm transition-colors bg-blue-600 text-white hover:opacity-90 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed"
         >
           {messages.consent.submitOpen}
         </button>

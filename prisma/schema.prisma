@@ -148,6 +148,12 @@ model GuestSession {
   destRejectionReason String?
   acceptedTerms       Boolean   @default(false)
   acceptedAt          DateTime?
+  /// The second required tick, when the portal requires privacy terms.
+  /// Null = the form did not ask (the setting was off for this session).
+  privacyPolicyAccepted Boolean?
+  /// The OPTIONAL marketing tick, as submitted. Null = not asked. A consent
+  /// flag, not personal data — like acceptedTerms, it records a choice.
+  marketingConsent Boolean?
   /// The guest chose "Secure Guest Access" on the consent form. Nothing about
   /// the authorization changes — this only decides where the confirmation page
   /// sends them afterwards, so the open path is untouched when it is false.
@@ -388,6 +394,35 @@ model PortalConfig {
   /// derived from configuration: 'form' when fields are enabled, else 'terms'
   /// — which reproduces pre-existing behaviour exactly.
   accessPolicy String?
+
+  // ---- identity (administrators see this; guests never do) ----
+  displayName String?
+  description String?
+
+  // ---- look ----
+  /// Hex like #4b449b. Validated server-side to clear 4.5:1 against white,
+  /// because it paints the primary action a guest has to be able to read.
+  brandColor String?
+  /// 'left' | 'center' | 'right'. Null = center (today's rendering).
+  brandAlignment String?
+  /// True = "Powered by Extreme Platform ONE" footer; false = no footer line;
+  /// null = the pre-existing portal-name line.
+  brandFooterEnabled Boolean?
+
+  // ---- language ----
+  /// Comma-separated locale codes offered to guests. Null = all eight.
+  localesEnabled String?
+
+  // ---- legal & privacy ----
+  /// Override for the terms shown on the consent page. Null = the localized
+  /// default. An override is single-language and renders as plain text.
+  termsText String?
+  /// A second required tick ("privacy terms") on the consent form.
+  privacyPolicyEnabled Boolean?
+  privacyPolicyText    String?
+  /// An OPTIONAL marketing-consent tick. Access is never conditional on it.
+  marketingEnabled Boolean?
+  marketingText    String?
 
   /// Who last wrote this, from the caller's X-Actor header. Audit only.
   updatedBy String?

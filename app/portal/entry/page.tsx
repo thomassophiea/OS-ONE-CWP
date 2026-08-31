@@ -5,7 +5,9 @@ import { log } from "@/lib/log";
 import { SESSION_COOKIE, readSessionCookie } from "@/lib/session/cookie";
 import { isExpired } from "@/lib/session/repository";
 import { requestLocale } from "@/lib/i18n/server";
+import { effectiveBranding } from "@/lib/config/portal";
 import LanguagePicker from "@/app/LanguagePicker";
+import PortalFooter from "@/app/PortalFooter";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,7 +28,8 @@ export const dynamic = "force-dynamic";
 export default async function PortalEntryPage() {
   const jar = await cookies();
   const sessionId = readSessionCookie(jar.get(SESSION_COOKIE)?.value);
-  const { locale, definition, messages } = await requestLocale();
+  const { locale, definition, messages, offered } = await requestLocale();
+  const branding = await effectiveBranding();
 
   if (sessionId) {
     let session = null;
@@ -51,12 +54,12 @@ export default async function PortalEntryPage() {
       dir={definition.dir}
     >
       <div className="bg-white rounded-2xl shadow-md w-full max-w-md p-8">
-        <LanguagePicker current={locale} label={messages.common.languageLabel} />
+        <LanguagePicker current={locale} label={messages.common.languageLabel} locales={offered} />
         <div className="mt-4 text-center">
           <h1 className="text-2xl font-bold text-slate-900 mb-2">{messages.entry.title}</h1>
           <p className="text-sm text-slate-600 leading-relaxed">{messages.entry.body}</p>
           <p className="mt-4 text-sm text-slate-500 leading-relaxed">{messages.entry.hint}</p>
-          <p className="mt-8 text-xs text-slate-400">{messages.common.portalName}</p>
+          <PortalFooter branding={branding} portalName={messages.common.portalName} className="mt-8 text-xs" />
         </div>
       </div>
     </main>

@@ -5,16 +5,25 @@ import { log } from "@/lib/log";
 import { audit } from "@/lib/session/repository";
 import { authorizeInternalRequest, actorFrom } from "@/lib/guests/internalAuth";
 import {
+  DEFAULT_BRAND_COLOR,
+  DEFAULT_MARKETING_TEXT,
+  DEFAULT_PRIVACY_POLICY_TEXT,
+  contrastAgainstWhite,
   effectiveAccessPolicy,
+  effectiveBranding,
+  effectiveEnabledLocales,
   effectiveGuestFields,
+  effectiveLegal,
   effectiveSecureAccess,
   effectiveSponsorship,
   invalidatePortalConfigCache,
+  isAcceptableBrandColor,
   isAccessPolicy,
   portalConfigRow,
 } from "@/lib/config/portal";
 import { networkCapabilities } from "@/lib/onboarding/providers/skynet";
 import { DEFAULT_LOCALE, LOCALES } from "@/lib/i18n";
+import { capportTokenSecret } from "@/lib/env";
 import {
   isAcceptableSponsorDomain,
   validateSponsorEmail,
@@ -54,6 +63,17 @@ type StoredView = {
   guestFieldsRequired: string[] | null;
   secureAccessEnabled: boolean | null;
   accessPolicy: string | null;
+  displayName: string | null;
+  description: string | null;
+  brandColor: string | null;
+  brandAlignment: string | null;
+  brandFooterEnabled: boolean | null;
+  localesEnabled: string[] | null;
+  termsText: string | null;
+  privacyPolicyEnabled: boolean | null;
+  privacyPolicyText: string | null;
+  marketingEnabled: boolean | null;
+  marketingText: string | null;
   updatedBy: string | null;
   updatedAt: string | null;
 };
@@ -74,6 +94,17 @@ function storedView(row: PortalConfig | null): StoredView {
     guestFieldsRequired: splitStored(row?.guestFieldsRequired ?? null),
     secureAccessEnabled: row?.secureAccessEnabled ?? null,
     accessPolicy: row?.accessPolicy ?? null,
+    displayName: row?.displayName ?? null,
+    description: row?.description ?? null,
+    brandColor: row?.brandColor ?? null,
+    brandAlignment: row?.brandAlignment ?? null,
+    brandFooterEnabled: row?.brandFooterEnabled ?? null,
+    localesEnabled: splitStored(row?.localesEnabled ?? null),
+    termsText: row?.termsText ?? null,
+    privacyPolicyEnabled: row?.privacyPolicyEnabled ?? null,
+    privacyPolicyText: row?.privacyPolicyText ?? null,
+    marketingEnabled: row?.marketingEnabled ?? null,
+    marketingText: row?.marketingText ?? null,
     updatedBy: row?.updatedBy ?? null,
     updatedAt: row?.updatedAt?.toISOString() ?? null,
   };
@@ -140,13 +171,17 @@ function ecpView() {
 }
 
 async function fullView() {
-  const [row, sponsorship, guestFields, secureAccess, accessPolicy] = await Promise.all([
-    portalConfigRow(),
-    effectiveSponsorship(),
-    effectiveGuestFields(),
-    effectiveSecureAccess(),
-    effectiveAccessPolicy(),
-  ]);
+  const [row, sponsorship, guestFields, secureAccess, accessPolicy, branding, legal, locales] =
+    await Promise.all([
+      portalConfigRow(),
+      effectiveSponsorship(),
+      effectiveGuestFields(),
+      effectiveSecureAccess(),
+      effectiveAccessPolicy(),
+      effectiveBranding(),
+      effectiveLegal(),
+      effectiveEnabledLocales(),
+    ]);
   const secureNetwork = secureAccess.configured ? await secureNetworkView() : null;
   return {
     stored: storedView(row),
@@ -170,11 +205,24 @@ async function fullView() {
       // additionally degrades 'sponsored' to 'terms' when sponsorship cannot
       // run, which the caller can see from sponsorship.enabled.
       accessPolicy,
+      branding,
+      legal,
+      enabledLocales: locales,
+      // RFC 8908: the portal serves the Captive Portal API; RFC 8910 (DHCP
+      // option 114 / IPv6 RA) is the network's half of the standard and is
+      // what activates it. tokenConfigured gates the per-client URIs.
+      capport: {
+        apiPath: "/captive-api",
+        tokenConfigured: capportTokenSecret() !== null,
+      },
     },
     // What the operator may choose from, so the UI never invents field ids.
     fieldCatalogue: GUEST_FIELD_CATALOGUE.map((f) => ({ id: f.id, personal: f.personal })),
     envDefaults: {
       sponsorAllowedDomains: envSponsorDomains(),
+      brandColor: DEFAULT_BRAND_COLOR,
+      privacyPolicyText: DEFAULT_PRIVACY_POLICY_TEXT,
+      marketingText: DEFAULT_MARKETING_TEXT,
     },
     preview: previewCatalogue(),
   };
@@ -272,6 +320,62 @@ export async function PUT(request: NextRequest) {
     const v = body.accessPolicy;
     if (v === null || isAccessPolicy(v)) data.accessPolicy = v;
     else errors.push("accessPolicy must be one of open, terms, form, sponsored, or null");
+  }
+
+  const textField = (name: keyof Prisma.PortalConfigUpdateInput & string, max: number) => {
+    if (!(name in body)) return;
+    const v = body[name];
+    if (v === null) {
+      (data as Record<string, unknown>)[name] = null;
+    } else if (typeof v === "string" && v.length <= max) {
+      (data as Record<string, unknown>)[name] = v;
+    } else {
+      errors.push(`${name} must be a string of at most ${max} characters, or null`);
+    }
+  };
+  textField("displayName", 120);
+  textField("description", 500);
+  textField("termsText", 8000);
+  textField("privacyPolicyText", 8000);
+  textField("marketingText", 8000);
+
+  const boolField = (name: keyof Prisma.PortalConfigUpdateInput & string) => {
+    if (!(name in body)) return;
+    const v = body[name];
+    if (v === null || typeof v === "boolean") (data as Record<string, unknown>)[name] = v;
+    else errors.push(`${name} must be a boolean or null`);
+  };
+  boolField("brandFooterEnabled");
+  boolField("privacyPolicyEnabled");
+  boolField("marketingEnabled");
+
+  if ("brandColor" in body) {
+    const v = body.brandColor;
+    if (v === null) data.brandColor = null;
+    else if (typeof v === "string" && isAcceptableBrandColor(v)) data.brandColor = v.toLowerCase();
+    else if (typeof v === "string" && /^#[0-9a-f]{6}$/i.test(v))
+      errors.push(
+        `brandColor ${v} fails contrast: white text on it measures ${contrastAgainstWhite(v).toFixed(2)}:1 and the bar is 4.50:1`
+      );
+    else errors.push("brandColor must be a #rrggbb hex colour or null");
+  }
+
+  if ("brandAlignment" in body) {
+    const v = body.brandAlignment;
+    if (v === null || v === "left" || v === "center" || v === "right") data.brandAlignment = v;
+    else errors.push("brandAlignment must be left, center, right, or null");
+  }
+
+  if ("localesEnabled" in body) {
+    const v = body.localesEnabled;
+    if (v === null) data.localesEnabled = null;
+    else if (Array.isArray(v) && v.every((c) => typeof c === "string")) {
+      const known = LOCALES.map((l) => l.code);
+      const bad = (v as string[]).filter((c) => !known.includes(c));
+      if (bad.length > 0) errors.push(`localesEnabled: unknown locale(s) ${bad.join(", ")}`);
+      else if (v.length === 0) errors.push("localesEnabled must offer at least one locale, or be null for all");
+      else data.localesEnabled = (v as string[]).join(",");
+    } else errors.push("localesEnabled must be an array of locale codes or null");
   }
 
   const intField = (name: string, min: number, max: number) => {

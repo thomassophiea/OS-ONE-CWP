@@ -15,7 +15,9 @@ import { requestLocale } from "@/lib/i18n/server";
 import { describeFieldError, type FieldError } from "@/lib/guestFields/validate";
 import {
   effectiveAccessPolicy,
+  effectiveBranding,
   effectiveGuestFields,
+  effectiveLegal,
   effectiveSecureAccess,
   effectiveSponsorship,
 } from "@/lib/config/portal";
@@ -51,7 +53,7 @@ export default async function ConsentPage({
   const jar = await cookies();
   const sessionId = readSessionCookie(jar.get(SESSION_COOKIE)?.value);
   const csrfToken = jar.get(CSRF_COOKIE)?.value ?? "";
-  const { locale, definition, messages } = await requestLocale();
+  const { locale, definition, messages, offered } = await requestLocale();
 
   if (!sessionId) redirect("/portal/error?code=no_session");
 
@@ -79,6 +81,7 @@ export default async function ConsentPage({
   }
 
   const sponsorCfg = await effectiveSponsorship();
+  const [branding, legal] = await Promise.all([effectiveBranding(), effectiveLegal()]);
 
   // The acceptance policy decides what the page draws. 'sponsored' with no
   // working sponsorship path would strand every guest, so it degrades to
@@ -174,9 +177,9 @@ export default async function ConsentPage({
       dir={definition.dir}
     >
       <div className="bg-white rounded-2xl shadow-md w-full max-w-md p-8">
-        <LanguagePicker current={locale} label={messages.common.languageLabel} />
+        <LanguagePicker current={locale} label={messages.common.languageLabel} locales={offered} />
 
-        <header className="mb-6 mt-4 text-center">
+        <header className="mb-6 mt-4" style={{ textAlign: branding.alignment }}>
           <h1 className="text-2xl font-bold text-slate-900">{messages.consent.title}</h1>
           <p className="mt-2 text-sm text-slate-500">{messages.consent.subtitle}</p>
         </header>
@@ -193,8 +196,10 @@ export default async function ConsentPage({
           />
         </dl>
 
-        <div className="rounded-lg bg-slate-50 border border-slate-200 p-4 mb-6 text-sm text-slate-700 max-h-40 overflow-y-auto leading-relaxed">
-          {messages.consent.terms}
+        {/* The operator may paste their own terms; the override is
+            single-language by nature and renders as plain text. */}
+        <div className="rounded-lg bg-slate-50 border border-slate-200 p-4 mb-6 text-sm text-slate-700 max-h-40 overflow-y-auto leading-relaxed whitespace-pre-line">
+          {legal.termsText ?? messages.consent.terms}
         </div>
 
         {!session.sanitizedDest && session.destRejectionReason && (
@@ -218,9 +223,21 @@ export default async function ConsentPage({
           sponsorship={sponsorship}
           fields={fields}
           openPath={accessPolicy !== "sponsored"}
+          brandColor={branding.color}
+          privacyPolicy={legal.privacyPolicy.enabled ? { text: legal.privacyPolicy.text } : null}
+          marketing={legal.marketing.enabled ? { text: legal.marketing.text } : null}
         />
 
-        <p className="mt-6 text-center text-xs text-slate-400">{messages.common.portalName}</p>
+        {/* Footer: null keeps the pre-existing portal-name line; true is the
+            branded line; false removes the footer entirely. */}
+        {branding.footer === null && (
+          <p className="mt-6 text-center text-xs text-slate-400">{messages.common.portalName}</p>
+        )}
+        {branding.footer === true && (
+          <p className="mt-6 text-center text-xs" style={{ color: branding.color }}>
+            Powered by Extreme Platform ONE
+          </p>
+        )}
       </div>
     </main>
   );

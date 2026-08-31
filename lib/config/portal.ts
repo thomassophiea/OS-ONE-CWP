@@ -13,6 +13,7 @@ import {
   type ConfiguredGuestField,
 } from "@/lib/guestFields/registry";
 import { secureOnboardingConfigured } from "@/lib/onboarding/providers/skynet";
+import { LOCALES } from "@/lib/i18n";
 
 /**
  * The effective portal configuration: the operator-managed `PortalConfig` row
@@ -159,6 +160,127 @@ export async function effectiveSecureAccess(): Promise<EffectiveSecureAccessConf
   if (!configured) return secureAccessDecision(configured, null);
   const row = await portalConfigRow();
   return secureAccessDecision(configured, row?.secureAccessEnabled);
+}
+
+// ---------------------------------------------------------------------------
+// Look
+
+/** The portal's pre-existing primary colour (Tailwind blue-600). */
+export const DEFAULT_BRAND_COLOR = "#2563eb";
+
+export type BrandAlignment = "left" | "center" | "right";
+
+export interface EffectiveBranding {
+  color: string;
+  alignment: BrandAlignment;
+  /**
+   * null = the pre-existing portal-name footer line; true = "Powered by
+   * Extreme Platform ONE"; false = no footer line at all.
+   */
+  footer: boolean | null;
+}
+
+const HEX_COLOR_RE = /^#[0-9a-f]{6}$/i;
+
+/** WCAG relative luminance of a #rrggbb colour. */
+function relativeLuminance(hex: string): number {
+  const channel = (v: number) => {
+    const s = v / 255;
+    return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+  };
+  const r = channel(parseInt(hex.slice(1, 3), 16));
+  const g = channel(parseInt(hex.slice(3, 5), 16));
+  const b = channel(parseInt(hex.slice(5, 7), 16));
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+/** Contrast ratio of a colour against white — the ink on the primary button. */
+export function contrastAgainstWhite(hex: string): number {
+  const l = relativeLuminance(hex);
+  return (1 + 0.05) / (l + 0.05);
+}
+
+/**
+ * A brand colour is acceptable when it parses and its white ink clears
+ * WCAG AA (4.5:1). Checked on write and again on read, so a value that
+ * predates a rule change degrades to the default instead of shipping
+ * unreadable buttons.
+ */
+export function isAcceptableBrandColor(value: string): boolean {
+  return HEX_COLOR_RE.test(value) && contrastAgainstWhite(value) >= 4.5;
+}
+
+export async function effectiveBranding(): Promise<EffectiveBranding> {
+  const row = await portalConfigRow();
+  const color =
+    row?.brandColor && isAcceptableBrandColor(row.brandColor)
+      ? row.brandColor.toLowerCase()
+      : DEFAULT_BRAND_COLOR;
+  const alignment: BrandAlignment =
+    row?.brandAlignment === "left" || row?.brandAlignment === "right"
+      ? row.brandAlignment
+      : "center";
+  return { color, alignment, footer: row?.brandFooterEnabled ?? null };
+}
+
+// ---------------------------------------------------------------------------
+// Legal & privacy
+
+/**
+ * Defaults for the optional legal documents, from the golden design. They are
+ * deliberately not in the i18n catalogues: an operator who switches a
+ * document on is expected to paste their own text, and these ship as working
+ * copy until they do.
+ */
+export const DEFAULT_PRIVACY_POLICY_TEXT =
+  "We collect only what this portal asks for, use it to give you access, and keep it no longer than the retention period set for this network. We never sell it.";
+export const DEFAULT_MARKETING_TEXT =
+  "If you opt in, we may email you occasional updates about this venue. You can withdraw consent at any time, and access to the network is never conditional on it.";
+
+export interface EffectiveLegal {
+  /** Override for the consent terms; null = the localized default. */
+  termsText: string | null;
+  privacyPolicy: { enabled: boolean; text: string };
+  marketing: { enabled: boolean; text: string };
+}
+
+export async function effectiveLegal(): Promise<EffectiveLegal> {
+  const row = await portalConfigRow();
+  return {
+    termsText: row?.termsText?.trim() ? row.termsText : null,
+    privacyPolicy: {
+      enabled: row?.privacyPolicyEnabled === true,
+      text: row?.privacyPolicyText?.trim() ? row.privacyPolicyText : DEFAULT_PRIVACY_POLICY_TEXT,
+    },
+    marketing: {
+      enabled: row?.marketingEnabled === true,
+      text: row?.marketingText?.trim() ? row.marketingText : DEFAULT_MARKETING_TEXT,
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Languages
+
+/**
+ * The locale codes offered to guests, validated against the shipped set.
+ * Null or an entirely-invalid list means all of them — a bad value can
+ * narrow the offer, never empty it.
+ */
+export function enabledLocalesDecision(
+  stored: string | null | undefined,
+  all: readonly string[]
+): string[] {
+  const wanted = parseIdList(stored).filter((code) => all.includes(code));
+  return wanted.length > 0 ? wanted : [...all];
+}
+
+export async function effectiveEnabledLocales(): Promise<string[]> {
+  const row = await portalConfigRow();
+  return enabledLocalesDecision(
+    row?.localesEnabled,
+    LOCALES.map((l) => l.code)
+  );
 }
 
 /** The guest fields this deployment collects, operator overlay applied. */

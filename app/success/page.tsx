@@ -8,6 +8,8 @@ import { normalizeMac } from "@/lib/captive/extractSessionFields";
 import { recordAuthorizedGuest } from "@/lib/guests/repository";
 import { toAbsoluteDestination } from "@/lib/captive/safeRedirect";
 import { requestLocale } from "@/lib/i18n/server";
+import { effectiveBranding } from "@/lib/config/portal";
+import PortalFooter from "@/app/PortalFooter";
 import { policyFor } from "@/lib/privacy/policy";
 import ForwardToDestination from "./ForwardToDestination";
 
@@ -30,6 +32,7 @@ export default async function SuccessPage({
   const { s } = await searchParams;
   const jar = await cookies();
   const { locale, definition, messages } = await requestLocale();
+  const branding = await effectiveBranding();
   const cookieSessionId = readSessionCookie(jar.get(SESSION_COOKIE)?.value);
 
   // The id in the URL is echoed back to us by the gateway, so it is never
@@ -182,7 +185,7 @@ export default async function SuccessPage({
           />
         )}
 
-        <p className="mt-6 text-xs text-slate-400">{messages.common.portalName}</p>
+        <PortalFooter branding={branding} portalName={messages.common.portalName} className="mt-6 text-xs" />
       </div>
     </main>
   );

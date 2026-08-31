@@ -137,6 +137,8 @@ export interface LocaleResolution {
   messages: Messages;
   /** Where the answer came from. Rendered nowhere; useful in logs and tests. */
   source: LocaleSource;
+  /** The locales this deployment offers, in shipped order — what the picker draws. */
+  offered: LocaleDefinition[];
 }
 
 /**
@@ -153,23 +155,42 @@ export interface LocaleResolution {
 export function resolveLocale({
   cookieValue,
   acceptLanguage,
+  enabled,
 }: {
   cookieValue?: string | null;
   acceptLanguage?: string | null;
+  /**
+   * Locale codes this deployment offers (operator-configured subset). Absent
+   * or empty means all of them. A disabled locale is treated as unsupported —
+   * a stale cookie or browser preference falls through, never strands.
+   */
+  enabled?: readonly string[] | null;
 }): LocaleResolution {
-  if (isSupportedLocale(cookieValue)) {
-    const definition = localeDefinition(cookieValue);
-    return { locale: definition.code, definition, messages: definition.messages, source: "selection" };
+  const allowed =
+    enabled && enabled.length > 0
+      ? LOCALES.filter((l) => enabled.includes(l.code))
+      : [...LOCALES];
+  const offered = allowed.length > 0 ? allowed : [...LOCALES];
+  const isOffered = (code: string) => offered.some((l) => l.code === code);
+  const finish = (definition: LocaleDefinition, source: LocaleSource): LocaleResolution => ({
+    locale: definition.code,
+    definition,
+    messages: definition.messages,
+    source,
+    offered,
+  });
+
+  if (isSupportedLocale(cookieValue) && isOffered(localeDefinition(cookieValue).code)) {
+    return finish(localeDefinition(cookieValue), "selection");
   }
 
-  const [best] = localesFromAcceptLanguage(acceptLanguage);
-  if (best) {
-    const definition = localeDefinition(best);
-    return { locale: definition.code, definition, messages: definition.messages, source: "browser" };
-  }
+  const best = localesFromAcceptLanguage(acceptLanguage).find(isOffered);
+  if (best) return finish(localeDefinition(best), "browser");
 
-  const definition = localeDefinition(DEFAULT_LOCALE);
-  return { locale: definition.code, definition, messages: definition.messages, source: "default" };
+  // English catches the rest; when English itself is not offered, the first
+  // offered locale is the default.
+  const fallback = isOffered(DEFAULT_LOCALE) ? localeDefinition(DEFAULT_LOCALE) : offered[0];
+  return finish(fallback, "default");
 }
 
 /**

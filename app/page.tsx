@@ -1,5 +1,7 @@
 import { requestLocale } from "@/lib/i18n/server";
+import { effectiveBranding } from "@/lib/config/portal";
 import LanguagePicker from "@/app/LanguagePicker";
+import PortalFooter from "@/app/PortalFooter";
 
 export const dynamic = "force-dynamic";
 
@@ -9,7 +11,8 @@ export const dynamic = "force-dynamic";
  * page tells them what to do instead.
  */
 export default async function Home() {
-  const { locale, definition, messages } = await requestLocale();
+  const { locale, definition, messages, offered } = await requestLocale();
+  const branding = await effectiveBranding();
   return (
     <main
       className="min-h-screen bg-slate-50 flex items-center justify-center p-4"
@@ -17,11 +20,11 @@ export default async function Home() {
       dir={definition.dir}
     >
       <div className="bg-white rounded-2xl shadow-md w-full max-w-md p-8">
-        <LanguagePicker current={locale} label={messages.common.languageLabel} />
+        <LanguagePicker current={locale} label={messages.common.languageLabel} locales={offered} />
         <div className="mt-4 text-center">
           <h1 className="text-2xl font-bold text-slate-900 mb-2">{messages.landing.title}</h1>
           <p className="text-sm text-slate-500">{messages.landing.body}</p>
-          <p className="mt-8 text-xs text-slate-400">{messages.common.portalName}</p>
+          <PortalFooter branding={branding} portalName={messages.common.portalName} className="mt-8 text-xs" />
         </div>
       </div>
     </main>

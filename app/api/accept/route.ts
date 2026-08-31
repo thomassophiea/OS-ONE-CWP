@@ -31,6 +31,7 @@ import { auditablePolicy, policyFromConsent } from "@/lib/privacy/policy";
 import {
   effectiveAccessPolicy,
   effectiveGuestFields,
+  effectiveLegal,
   effectiveSponsorship,
 } from "@/lib/config/portal";
 import { validateSponsorEmail } from "@/lib/sponsorship/sponsorEmailPolicy";
@@ -92,6 +93,8 @@ export async function POST(request: NextRequest) {
 
   let submittedCsrf: string | null = null;
   let agreed = false;
+  let privacyAgreed = false;
+  let marketingTicked = false;
   let interaction: string | null = null;
   let dwellMs = 0;
   // Which of the three workflows the guest chose. Anything other than an
@@ -115,6 +118,8 @@ export async function POST(request: NextRequest) {
     const form = await request.formData();
     submittedCsrf = form.get("csrfToken")?.toString() ?? null;
     agreed = form.get("agree")?.toString() === "yes";
+    privacyAgreed = form.get("agreePrivacy")?.toString() === "yes";
+    marketingTicked = form.get("marketingConsent")?.toString() === "yes";
     interaction = form.get("interaction")?.toString() ?? null;
     dwellMs = Number(form.get("dwellMs")?.toString() ?? "0");
     const mode = form.get("mode")?.toString();
@@ -222,6 +227,20 @@ export async function POST(request: NextRequest) {
     });
     return fail(base, "consent");
   }
+  // The second required tick, when the operator requires privacy terms. The
+  // server enforces it for the same reason it enforces the first one.
+  const legal = await effectiveLegal();
+  if (legal.privacyPolicy.enabled && !privacyAgreed) {
+    await audit(session.id, "ACCEPT_PRIVACY_NOT_AGREED", "warn", {
+      clientMac: session.clientMac,
+    });
+    return fail(base, "consent");
+  }
+  // Choices, not personal data: null means the form did not ask.
+  const legalFlags = {
+    privacyPolicyAccepted: legal.privacyPolicy.enabled ? privacyAgreed : null,
+    marketingConsent: legal.marketing.enabled ? marketingTicked : null,
+  };
   if (!consentChallengeMatches(interaction, session.id)) {
     await audit(session.id, "ACCEPT_NO_INTERACTION", "warn", {
       clientMac: session.clientMac,
@@ -341,6 +360,7 @@ export async function POST(request: NextRequest) {
           // stays STARTED until the sponsor's approval releases the URL.
           acceptedTerms: true,
           acceptedAt: now,
+          ...legalFlags,
           personalDataAllowed: policy.personalDataAllowed,
           privacyChoiceAt: now,
           guestFields:
@@ -480,6 +500,7 @@ export async function POST(request: NextRequest) {
         status: "ACCEPTED",
         acceptedTerms: true,
         acceptedAt: now,
+        ...legalFlags,
         // The prohibition, recorded once and read by everything downstream.
         personalDataAllowed: policy.personalDataAllowed,
         privacyChoiceAt: now,

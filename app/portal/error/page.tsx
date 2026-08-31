@@ -16,7 +16,7 @@ export default async function PortalErrorPage({
   searchParams: Promise<{ code?: string }>;
 }) {
   const { code } = await searchParams;
-  const { locale, definition, messages } = await requestLocale();
+  const { locale, definition, messages, offered } = await requestLocale();
 
   const key = (code ?? "") as keyof Messages["errors"];
   const message = messages.errors[key] ?? messages.errors.bad_request;
@@ -28,7 +28,7 @@ export default async function PortalErrorPage({
       dir={definition.dir}
     >
       <div className="bg-white rounded-2xl shadow-md w-full max-w-md p-8">
-        <LanguagePicker current={locale} label={messages.common.languageLabel} />
+        <LanguagePicker current={locale} label={messages.common.languageLabel} locales={offered} />
         <div className="mt-4 text-center">
           <div className="mb-4 text-amber-500" aria-hidden="true">
             <svg

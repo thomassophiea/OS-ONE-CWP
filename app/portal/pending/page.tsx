@@ -4,11 +4,14 @@ import { prisma } from "@/lib/prisma";
 import { log } from "@/lib/log";
 import { SESSION_COOKIE, readSessionCookie } from "@/lib/session/cookie";
 import { isExpired } from "@/lib/session/repository";
-import { effectiveSponsorship } from "@/lib/config/portal";
+import {
+  effectiveBranding,
+ effectiveSponsorship } from "@/lib/config/portal";
 import { effectiveStatus } from "@/lib/sponsorship/state";
 import { latestSponsorshipForSession } from "@/lib/sponsorship/service";
 import { requestLocale } from "@/lib/i18n/server";
 import LanguagePicker from "@/app/LanguagePicker";
+import PortalFooter from "@/app/PortalFooter";
 import PendingStatus, { type PendingInitialState } from "./PendingStatus";
 
 export const runtime = "nodejs";
@@ -24,7 +27,8 @@ export const dynamic = "force-dynamic";
  */
 export default async function PendingPage() {
   const jar = await cookies();
-  const { locale, definition, messages } = await requestLocale();
+  const { locale, definition, messages, offered } = await requestLocale();
+  const branding = await effectiveBranding();
   const sessionId = readSessionCookie(jar.get(SESSION_COOKIE)?.value);
 
   if (!sessionId) redirect("/portal/error?code=no_session");
@@ -63,7 +67,7 @@ export default async function PendingPage() {
       dir={definition.dir}
     >
       <div className="bg-white rounded-2xl shadow-md w-full max-w-md p-8">
-        <LanguagePicker current={locale} label={messages.common.languageLabel} />
+        <LanguagePicker current={locale} label={messages.common.languageLabel} locales={offered} />
 
         <PendingStatus
           initialState={initialState}
@@ -74,7 +78,7 @@ export default async function PendingPage() {
           ssid={session.ssid}
         />
 
-        <p className="mt-6 text-center text-xs text-slate-400">{messages.common.portalName}</p>
+        <PortalFooter branding={branding} portalName={messages.common.portalName} className="mt-6 text-center text-xs" />
       </div>
     </main>
   );
