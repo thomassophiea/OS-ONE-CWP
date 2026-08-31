@@ -18,10 +18,13 @@ import {
   validateSponsorEmail,
 } from "@/lib/sponsorship/sponsorEmailPolicy";
 import {
+  appBaseUrl,
   approvalUrlTtlSeconds,
+  ecpPath,
   emailTransportKind,
   sessionTtlSeconds,
   sponsorAllowedDomains as envSponsorDomains,
+  xccIdentity,
 } from "@/lib/env";
 import { GUEST_FIELD_CATALOGUE, fieldById } from "@/lib/guestFields/registry";
 
@@ -118,6 +121,20 @@ function previewCatalogue() {
   };
 }
 
+/**
+ * The ECP wiring a WLAN needs to point at this portal: the redirect URL the
+ * gateway must be given and the identity it signs as. The shared secret is
+ * deliberately absent — it names a credential and stays in the environment.
+ * Null when the deployment is not fully configured.
+ */
+function ecpView() {
+  try {
+    return { url: appBaseUrl() + ecpPath(), identity: xccIdentity() };
+  } catch {
+    return null;
+  }
+}
+
 async function fullView() {
   const [row, sponsorship, guestFields, secureAccess] = await Promise.all([
     portalConfigRow(),
@@ -143,6 +160,7 @@ async function fullView() {
         portalSessionTtlSeconds: sessionTtlSeconds(),
         approvalUrlTtlSeconds: approvalUrlTtlSeconds(),
       },
+      ecp: ecpView(),
     },
     // What the operator may choose from, so the UI never invents field ids.
     fieldCatalogue: GUEST_FIELD_CATALOGUE.map((f) => ({ id: f.id, personal: f.personal })),
