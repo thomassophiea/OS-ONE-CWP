@@ -381,6 +381,14 @@ model PortalConfig {
   /// It can never conjure the offer without SECURE_WLAN_* configuration.
   secureAccessEnabled Boolean?
 
+  // ---- acceptance policy ----
+  /// How guests get on: 'open' (no page — authorized on join), 'terms'
+  /// (consent page, no fields), 'form' (consent page + guest fields),
+  /// 'sponsored' (an employee approves before the session opens). Null =
+  /// derived from configuration: 'form' when fields are enabled, else 'terms'
+  /// — which reproduces pre-existing behaviour exactly.
+  accessPolicy String?
+
   /// Who last wrote this, from the caller's X-Actor header. Audit only.
   updatedBy String?
   createdAt DateTime @default(now())

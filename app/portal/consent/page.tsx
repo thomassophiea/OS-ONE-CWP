@@ -14,6 +14,7 @@ import { networkCapabilities } from "@/lib/onboarding/providers/skynet";
 import { requestLocale } from "@/lib/i18n/server";
 import { describeFieldError, type FieldError } from "@/lib/guestFields/validate";
 import {
+  effectiveAccessPolicy,
   effectiveGuestFields,
   effectiveSecureAccess,
   effectiveSponsorship,
@@ -77,12 +78,22 @@ export default async function ConsentPage({
     if (sponsorship) redirect("/portal/pending");
   }
 
+  const sponsorCfg = await effectiveSponsorship();
+
+  // The acceptance policy decides what the page draws. 'sponsored' with no
+  // working sponsorship path would strand every guest, so it degrades to
+  // terms acceptance — a guest is never left with no way on.
+  let accessPolicy = await effectiveAccessPolicy();
+  if (accessPolicy === "sponsored" && !sponsorCfg.enabled) accessPolicy = "terms";
+
   // The secure option is drawn only if a secure WLAN is actually configured,
   // readable, and not switched off by the operator. Any failure here removes
   // the second button and leaves the open guest path exactly as it was — this
   // lookup must never be able to break the page a guest needs to get online.
+  // Suppressed under the sponsored policy: mode=secure self-authorizes, which
+  // would sidestep the sponsor's approval.
   let secureNetwork: { ssid: string; securityLabel: string } | null = null;
-  if ((await effectiveSecureAccess()).enabled) {
+  if (accessPolicy !== "sponsored" && (await effectiveSecureAccess()).enabled) {
     try {
       const { network } = await networkCapabilities();
       const key = network.security as keyof Messages["security"];
@@ -112,7 +123,6 @@ export default async function ConsentPage({
   // Employee sponsorship is drawn only when configured (allowed domains plus a
   // working email transport, and not switched off by the operator). Absent,
   // the form is byte-identical to before.
-  const sponsorCfg = await effectiveSponsorship();
   const sponsorshipOffered = sponsorCfg.enabled;
   const sponsorDomain = sponsorshipOffered ? (sponsorCfg.domains[0] ?? null) : null;
   const sponsorError = errorsByField.get("sponsorEmail") ?? null;
@@ -135,8 +145,11 @@ export default async function ConsentPage({
         }
       : null;
 
+  // Guest fields are drawn only under the 'form' policy; 'terms' is one tick
+  // and a button whatever fields are configured. The sponsor path's identity
+  // fields still arrive through fieldsForConsentRender's widening.
   const fields: RenderedField[] = fieldsForConsentRender(
-    await effectiveGuestFields(),
+    accessPolicy === "form" ? await effectiveGuestFields() : [],
     sponsorshipOffered
   ).map((field) => {
     const error = errorsByField.get(field.id) ?? null;
@@ -204,6 +217,7 @@ export default async function ConsentPage({
           secureNetwork={secureNetwork}
           sponsorship={sponsorship}
           fields={fields}
+          openPath={accessPolicy !== "sponsored"}
         />
 
         <p className="mt-6 text-center text-xs text-slate-400">{messages.common.portalName}</p>

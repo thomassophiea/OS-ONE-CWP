@@ -107,6 +107,34 @@ export async function effectiveSponsorship(): Promise<EffectiveSponsorshipConfig
   return { enabled, domains, addresses, ttlSeconds, maxPerSession };
 }
 
+/** How guests get on. One choice; it decides whether a page is drawn at all. */
+export type PortalAccessPolicy = "open" | "terms" | "form" | "sponsored";
+
+const ACCESS_POLICIES: readonly PortalAccessPolicy[] = ["open", "terms", "form", "sponsored"];
+
+export function isAccessPolicy(value: unknown): value is PortalAccessPolicy {
+  return typeof value === "string" && (ACCESS_POLICIES as readonly string[]).includes(value);
+}
+
+/**
+ * Resolve the stored policy against the deployment. Null derives from what is
+ * configured — 'form' when guest fields are enabled, otherwise 'terms' — so a
+ * deployment that never chose reproduces pre-existing behaviour exactly.
+ * Pure, so the resolution is testable without a database.
+ */
+export function accessPolicyDecision(
+  stored: string | null | undefined,
+  fieldsConfigured: boolean
+): PortalAccessPolicy {
+  if (isAccessPolicy(stored)) return stored;
+  return fieldsConfigured ? "form" : "terms";
+}
+
+export async function effectiveAccessPolicy(): Promise<PortalAccessPolicy> {
+  const [row, fields] = await Promise.all([portalConfigRow(), effectiveGuestFields()]);
+  return accessPolicyDecision(row?.accessPolicy, fields.length > 0);
+}
+
 export interface EffectiveSecureAccessConfig {
   /** A secure WLAN exists in the environment, so the offer is possible. */
   configured: boolean;

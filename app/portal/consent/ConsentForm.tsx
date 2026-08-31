@@ -63,6 +63,7 @@ export default function ConsentForm({
   secureNetwork,
   sponsorship,
   fields,
+  openPath = true,
 }: {
   csrfToken: string;
   challenge: string;
@@ -82,6 +83,12 @@ export default function ConsentForm({
   sponsorship: { domain: string; error: string | null; value: string } | null;
   /** Guest fields this deployment collects. Empty is the default. */
   fields: RenderedField[];
+  /**
+   * Whether the direct "connect" path is offered. False under the sponsored
+   * acceptance policy, where an employee's approval is the only way on — the
+   * open submit button is then not drawn, and the server refuses the mode.
+   */
+  openPath?: boolean;
 }) {
   const [agreed, setAgreed] = useState(false);
   const [gestured, setGestured] = useState(false);
@@ -209,18 +216,21 @@ export default function ConsentForm({
       </div>
 
       {/* The open guest path. Unchanged: same name, same position, same submit,
-          same handler. Everything below it is additive. */}
-      <button
-        type="submit"
-        name="mode"
-        value="open"
-        disabled={!ready}
-        onPointerDown={noteGesture}
-        onKeyDown={noteGesture}
-        className="w-full rounded-xl py-3 font-semibold text-sm transition-colors bg-blue-600 text-white hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed"
-      >
-        {messages.consent.submitOpen}
-      </button>
+          same handler. Everything below it is additive. Not drawn under the
+          sponsored acceptance policy, where approval is the only way on. */}
+      {openPath && (
+        <button
+          type="submit"
+          name="mode"
+          value="open"
+          disabled={!ready}
+          onPointerDown={noteGesture}
+          onKeyDown={noteGesture}
+          className="w-full rounded-xl py-3 font-semibold text-sm transition-colors bg-blue-600 text-white hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed"
+        >
+          {messages.consent.submitOpen}
+        </button>
+      )}
 
       {!ready && (
         <p className="mt-3 text-center text-xs text-slate-400">

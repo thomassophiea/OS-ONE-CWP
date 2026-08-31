@@ -5,10 +5,12 @@ import { log } from "@/lib/log";
 import { audit } from "@/lib/session/repository";
 import { authorizeInternalRequest, actorFrom } from "@/lib/guests/internalAuth";
 import {
+  effectiveAccessPolicy,
   effectiveGuestFields,
   effectiveSecureAccess,
   effectiveSponsorship,
   invalidatePortalConfigCache,
+  isAccessPolicy,
   portalConfigRow,
 } from "@/lib/config/portal";
 import { networkCapabilities } from "@/lib/onboarding/providers/skynet";
@@ -51,6 +53,7 @@ type StoredView = {
   guestFieldsEnabled: string[] | null;
   guestFieldsRequired: string[] | null;
   secureAccessEnabled: boolean | null;
+  accessPolicy: string | null;
   updatedBy: string | null;
   updatedAt: string | null;
 };
@@ -70,6 +73,7 @@ function storedView(row: PortalConfig | null): StoredView {
     guestFieldsEnabled: splitStored(row?.guestFieldsEnabled ?? null),
     guestFieldsRequired: splitStored(row?.guestFieldsRequired ?? null),
     secureAccessEnabled: row?.secureAccessEnabled ?? null,
+    accessPolicy: row?.accessPolicy ?? null,
     updatedBy: row?.updatedBy ?? null,
     updatedAt: row?.updatedAt?.toISOString() ?? null,
   };
@@ -136,11 +140,12 @@ function ecpView() {
 }
 
 async function fullView() {
-  const [row, sponsorship, guestFields, secureAccess] = await Promise.all([
+  const [row, sponsorship, guestFields, secureAccess, accessPolicy] = await Promise.all([
     portalConfigRow(),
     effectiveSponsorship(),
     effectiveGuestFields(),
     effectiveSecureAccess(),
+    effectiveAccessPolicy(),
   ]);
   const secureNetwork = secureAccess.configured ? await secureNetworkView() : null;
   return {
@@ -161,6 +166,10 @@ async function fullView() {
         approvalUrlTtlSeconds: approvalUrlTtlSeconds(),
       },
       ecp: ecpView(),
+      // Resolved (null derives from what is configured); the consent page
+      // additionally degrades 'sponsored' to 'terms' when sponsorship cannot
+      // run, which the caller can see from sponsorship.enabled.
+      accessPolicy,
     },
     // What the operator may choose from, so the UI never invents field ids.
     fieldCatalogue: GUEST_FIELD_CATALOGUE.map((f) => ({ id: f.id, personal: f.personal })),
@@ -257,6 +266,12 @@ export async function PUT(request: NextRequest) {
     const v = body.secureAccessEnabled;
     if (v === null || typeof v === "boolean") data.secureAccessEnabled = v;
     else errors.push("secureAccessEnabled must be a boolean or null");
+  }
+
+  if ("accessPolicy" in body) {
+    const v = body.accessPolicy;
+    if (v === null || isAccessPolicy(v)) data.accessPolicy = v;
+    else errors.push("accessPolicy must be one of open, terms, form, sponsored, or null");
   }
 
   const intField = (name: string, min: number, max: number) => {

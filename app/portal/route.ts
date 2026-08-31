@@ -40,6 +40,7 @@ import {
   newCsrfToken,
 } from "@/lib/session/cookie";
 import { audit, isUniqueViolation } from "@/lib/session/repository";
+import { effectiveAccessPolicy } from "@/lib/config/portal";
 import { capportTokenForMac, hashCapportToken } from "@/lib/capport/resolve";
 import {
   rebindSponsorshipToSession,
@@ -277,10 +278,32 @@ export async function GET(request: NextRequest) {
       identity,
       secret,
       ledgerId: ledgerEntry!.id,
+      reason: "PREAUTHORIZED",
     });
     if (preAuthResponse) return withSessionCookie(preAuthResponse, sessionId);
     // Falling through means the approval URL could not be built; the guest
     // still gets the ordinary consent flow rather than an error page.
+  }
+
+  // --- open acceptance policy: authorized the moment they join -------------
+  // No page, no consent, no fields. The same signed approval the consent form
+  // would produce, issued directly — one authorization stack, no exceptions.
+  // Any failure degrades to the ordinary consent flow, which is always safe.
+  try {
+    if ((await effectiveAccessPolicy()) === "open") {
+      const openResponse = await approveWithoutConsent({
+        base,
+        sessionId,
+        fields,
+        identity,
+        secret,
+        ledgerId: ledgerEntry?.id ?? null,
+        reason: "OPEN_ACCESS",
+      });
+      if (openResponse) return withSessionCookie(openResponse, sessionId);
+    }
+  } catch (err) {
+    log.error("portal_access_policy_failed", { err });
   }
 
   // --- resumable sponsorship for this device -------------------------------
@@ -328,12 +351,15 @@ export async function GET(request: NextRequest) {
 }
 
 /**
- * Issue the gateway approval for a device an operator pre-authorized.
+ * Issue the gateway approval without showing the consent form — for a device
+ * an operator pre-authorized ("PREAUTHORIZED"), or for every device when the
+ * acceptance policy is open ("OPEN_ACCESS").
  *
  * Identical to what `/api/accept` produces once a guest ticks the box — the
- * same signed `/ext_approval.php` URL, fetched by the same browser — so a
- * manually added MAC is authorized through exactly the mechanism the portal
- * uses, not a parallel one. The consent step is what is skipped, nothing else.
+ * same signed `/ext_approval.php` URL, fetched by the same browser — so both
+ * cases are authorized through exactly the mechanism the portal uses, not a
+ * parallel one. The consent step is what is skipped, nothing else, and the
+ * audit trail records which rule skipped it.
  *
  * Returns null if the session lacks a field the callback needs, so the caller
  * can fall back to the ordinary flow.
@@ -345,13 +371,15 @@ async function approveWithoutConsent({
   identity,
   secret,
   ledgerId,
+  reason,
 }: {
   base: string;
   sessionId: string;
   fields: ReturnType<typeof extractSessionFields>;
   identity: string;
   secret: string;
-  ledgerId: string;
+  ledgerId: string | null;
+  reason: "PREAUTHORIZED" | "OPEN_ACCESS";
 }): Promise<NextResponse | null> {
   if (!fields.gatewayHost || !fields.gatewayToken || !fields.wlan || !fields.clientMac) {
     await audit(sessionId, "PREAUTH_SESSION_INCOMPLETE", "error", {
@@ -387,11 +415,15 @@ async function approveWithoutConsent({
       where: { id: sessionId },
       data: {
         status: "ACCEPTED",
-        // Not `acceptedTerms`: nobody accepted anything. The operator vouched
-        // for this device, and the audit trail must not claim otherwise.
+        // Not `acceptedTerms`: nobody accepted anything. The operator (or the
+        // open policy) vouched for this device, and the audit trail must not
+        // claim otherwise.
         acceptedTerms: false,
         authorizationAttemptedAt: now,
-        authorizationResult: "PREAUTHORIZED_APPROVAL_URL_ISSUED",
+        authorizationResult:
+          reason === "OPEN_ACCESS"
+            ? "OPEN_ACCESS_APPROVAL_URL_ISSUED"
+            : "PREAUTHORIZED_APPROVAL_URL_ISSUED",
         // No consent form will be shown, so the token can never be used.
         csrfTokenHash: null,
       },
@@ -401,13 +433,18 @@ async function approveWithoutConsent({
     return null;
   }
 
-  await audit(sessionId, "PREAUTHORIZED_APPROVAL_ISSUED", "info", {
-    clientMac: fields.clientMac,
-    guestId: ledgerId,
-    ssid: fields.ssid,
-    wlan: fields.wlan,
-    gatewayHost: fields.gatewayHost,
-  });
+  await audit(
+    sessionId,
+    reason === "OPEN_ACCESS" ? "OPEN_ACCESS_APPROVAL_ISSUED" : "PREAUTHORIZED_APPROVAL_ISSUED",
+    "info",
+    {
+      clientMac: fields.clientMac,
+      guestId: ledgerId,
+      ssid: fields.ssid,
+      wlan: fields.wlan,
+      gatewayHost: fields.gatewayHost,
+    }
+  );
 
   const response = NextResponse.redirect(approvalUrl, 303);
   response.cookies.delete(CSRF_COOKIE);

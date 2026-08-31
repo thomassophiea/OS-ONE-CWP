@@ -28,7 +28,11 @@ import {
 import { audit, isExpired } from "@/lib/session/repository";
 import { validateGuestFields } from "@/lib/guestFields/validate";
 import { auditablePolicy, policyFromConsent } from "@/lib/privacy/policy";
-import { effectiveGuestFields, effectiveSponsorship } from "@/lib/config/portal";
+import {
+  effectiveAccessPolicy,
+  effectiveGuestFields,
+  effectiveSponsorship,
+} from "@/lib/config/portal";
 import { validateSponsorEmail } from "@/lib/sponsorship/sponsorEmailPolicy";
 import { sponsorshipGuestFields } from "@/lib/sponsorship/fields";
 import {
@@ -102,7 +106,11 @@ export async function POST(request: NextRequest) {
   let doNotStore = false;
   const rawFields: Record<string, string | undefined> = {};
   // Operator-managed field selection, with the environment as fallback.
-  const baseFields = await effectiveGuestFields();
+  // The acceptance policy gates whether the form drew them at all: under
+  // 'terms' (and 'open', which never renders a form) nothing was asked, so
+  // nothing is read or validated — a submission cannot smuggle fields in.
+  const accessPolicy = await effectiveAccessPolicy();
+  const baseFields = accessPolicy === "form" ? await effectiveGuestFields() : [];
   try {
     const form = await request.formData();
     submittedCsrf = form.get("csrfToken")?.toString() ?? null;
@@ -124,6 +132,22 @@ export async function POST(request: NextRequest) {
     }
   } catch {
     return fail(base, "bad_request");
+  }
+
+  // Under the sponsored policy, an employee's approval is the only way on:
+  // the form never draws the open or secure submit, and a forged POST that
+  // claims one is refused before anything can be authorized. The refusal is
+  // waived when sponsorship cannot run (no domains or transport) — the page
+  // then degrades to terms acceptance, and the accept must match the page.
+  if (accessPolicy === "sponsored" && !sponsorRequested) {
+    const sponsorCfgForPolicy = await effectiveSponsorship();
+    if (sponsorCfgForPolicy.enabled) {
+      await audit(sessionId, "ACCEPT_POLICY_REFUSED", "warn", {
+        accessPolicy,
+        mode: secureRequested ? "secure" : "open",
+      });
+      return fail(base, "bad_request");
+    }
   }
 
   const policy = policyFromConsent(doNotStore);
