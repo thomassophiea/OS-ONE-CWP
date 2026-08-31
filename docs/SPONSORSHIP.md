@@ -81,13 +81,16 @@ Audit events and logs carry the sponsor's **domain**, never the mailbox.
 ## Email
 
 `lib/email/transport.ts` — business logic, template and transport are separate.
-SMTP (nodemailer) when configured; a `console` transport that prints the
-rendered message to the structured log for development, available in production
-only by explicit `EMAIL_TRANSPORT=console` (the message contains the review
-URL). Delivery failure cancels the request and tells the guest — nobody waits
-for an email that never left. All interpolated values are control-character
-stripped; recipients and subjects are refused outright if header-unsafe; HTML
-bodies are escaped.
+Three transports: **Resend** (HTTPS API — required on Railway, which blocks all
+outbound SMTP: 587/465/2525 measured dead from the container on 2026-08-31),
+**SMTP** (nodemailer, for hosts with an open SMTP path; Ethereal works for
+local demos), and a `console` transport that prints the rendered message to
+the structured log for development, available in production only by explicit
+`EMAIL_TRANSPORT=console` (the message contains the review URL). Delivery
+failure cancels the request and tells the guest — nobody waits for an email
+that never left. All interpolated values are control-character stripped;
+recipients and subjects are refused outright if header-unsafe; HTML bodies are
+escaped; the Resend key travels only in the Authorization header.
 
 ## Waiting behaviour
 

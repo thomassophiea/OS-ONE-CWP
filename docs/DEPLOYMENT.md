@@ -84,9 +84,10 @@ path is untouched. See [SPONSORSHIP.md](SPONSORSHIP.md).
 | `SPONSORSHIP_TTL_SECONDS` | default: `PORTAL_SESSION_TTL_SECONDS` |
 | `SPONSORSHIP_MAX_PER_SESSION` | `3` |
 | `SPONSORSHIP_MAX_STATUS_CHECKS` | `300` |
-| `EMAIL_TRANSPORT` | `smtp`, or `console` (explicit-only in production — the logged message contains the review URL) |
-| `EMAIL_FROM` | From header for portal mail |
-| `SMTP_URL` *or* `SMTP_HOST`/`SMTP_PORT`/`SMTP_SECURE`/`SMTP_USER`/`SMTP_PASSWORD` | relay credentials |
+| `EMAIL_TRANSPORT` | `resend`, `smtp`, or `console` (explicit-only in production — the logged message contains the review URL) |
+| `EMAIL_FROM` | From header for SMTP mail |
+| `RESEND_API_KEY` / `RESEND_FROM` | Resend HTTPS API — **the only transport that works on Railway**, which blocks all outbound SMTP (587/465/2525 measured dead from the container, 2026-08-31) |
+| `SMTP_URL` *or* `SMTP_HOST`/`SMTP_PORT`/`SMTP_SECURE`/`SMTP_USER`/`SMTP_PASSWORD` | relay credentials, for hosts with an open SMTP path |
 
 ### Captive Portal API — RFC 8908 (optional)
 

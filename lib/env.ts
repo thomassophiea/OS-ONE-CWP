@@ -214,26 +214,49 @@ export function sponsorshipMaxStatusChecks(): number {
   return Number.isFinite(raw) && raw > 0 ? raw : 300;
 }
 
-export type EmailTransportKind = "smtp" | "console";
+export type EmailTransportKind = "resend" | "smtp" | "console";
 
 /**
  * Which email transport is usable, or null when none is.
  *
- * SMTP wins whenever it is configured. The console transport — the rendered
- * message written to the structured log — is the development default, and in
- * production it must be asked for by name (`EMAIL_TRANSPORT=console`): the
- * emailed URL carries the approval token, and printing it into a shared log
- * stream is a deliberate demo-environment decision, never a fallback.
+ * Preference order when nothing is forced: Resend's HTTP API, then SMTP, then
+ * (outside production) the console. Resend outranks SMTP because the primary
+ * deployment target blocks outbound SMTP at the network layer — measured on
+ * 2026-08-31: ports 587, 465 and 2525 to multiple providers all time out from
+ * the Railway container, so HTTPS is the only lane an email can actually
+ * leave through there. SMTP remains for deployments that do have an open path.
+ *
+ * The console transport — the rendered message written to the structured log —
+ * is the development default, and in production it must be asked for by name
+ * (`EMAIL_TRANSPORT=console`): the emailed URL carries the approval token, and
+ * printing it into a shared log stream is a deliberate demo-environment
+ * decision, never a fallback.
  */
 export function emailTransportKind(): EmailTransportKind | null {
   const forced = process.env.EMAIL_TRANSPORT?.trim().toLowerCase();
-  if (forced === "console") return "console";
+  const resendConfigured = Boolean(process.env.RESEND_API_KEY?.trim());
   const smtpConfigured = Boolean(
     process.env.SMTP_URL?.trim() || process.env.SMTP_HOST?.trim()
   );
+  if (forced === "console") return "console";
+  if (forced === "resend") return resendConfigured ? "resend" : null;
   if (forced === "smtp") return smtpConfigured ? "smtp" : null;
+  if (resendConfigured) return "resend";
   if (smtpConfigured) return "smtp";
   return isProduction() ? null : "console";
+}
+
+export function resendApiKey(): string | null {
+  return process.env.RESEND_API_KEY?.trim() || null;
+}
+
+/**
+ * From address for the Resend transport. Until a sending domain is verified
+ * with Resend, their free tier only accepts `onboarding@resend.dev` as the
+ * sender (and only the account owner as recipient), so that is the default.
+ */
+export function resendFrom(): string {
+  return process.env.RESEND_FROM?.trim() || "onboarding@resend.dev";
 }
 
 /** From address for portal mail. Required for SMTP; cosmetic for console. */
