@@ -72,7 +72,26 @@ export default async function SuccessPage({
       // manages catches up here rather than at consent time — an approval URL
       // that was issued but never fetched is not an authorized guest.
       if (session.clientMac) {
+        // A sponsored session may carry a sponsor-chosen grant length; it
+        // becomes the ledger row's expiry, measured from the confirmed grant.
+        // Failure to read it degrades to the network default, never to no row.
+        let grantExpiresAt: Date | undefined;
+        try {
+          const sponsorship = await prisma.sponsorshipRequest.findFirst({
+            where: { sessionId: session.id, status: "APPROVED" },
+            orderBy: { createdAt: "desc" },
+          });
+          if (sponsorship?.accessDurationSeconds) {
+            grantExpiresAt = new Date(
+              Date.now() + sponsorship.accessDurationSeconds * 1000
+            );
+          }
+        } catch (err) {
+          log.error("success_sponsorship_lookup_failed", { err });
+        }
+
         await recordAuthorizedGuest({
+          ...(grantExpiresAt ? { expiresAt: grantExpiresAt } : {}),
           macAddress: session.clientMac,
           ssid: session.ssid,
           wlan: session.wlan,

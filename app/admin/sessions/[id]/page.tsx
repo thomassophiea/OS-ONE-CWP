@@ -106,6 +106,10 @@ export default async function SessionDetailPage({
                         "Authorization released",
                         r.authorizationIssuedAt?.toISOString() ?? null,
                       ],
+                      [
+                        "Access duration",
+                        r.accessDurationSeconds ? `${r.accessDurationSeconds}s` : null,
+                      ],
                       ["Status polls", String(r.checkCount)],
                     ] as [string, string | null][]
                   )

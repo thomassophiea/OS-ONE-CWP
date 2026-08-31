@@ -4,6 +4,10 @@ import {
   recordSponsorViewed,
   sponsorshipByToken,
 } from "@/lib/sponsorship/service";
+import {
+  SPONSOR_ACCESS_DURATIONS,
+  describeAccessDuration,
+} from "@/lib/sponsorship/duration";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -68,7 +72,7 @@ export default async function SponsorReviewPage({
         </h1>
         <p className="text-sm text-slate-500 mb-6">
           {approved
-            ? "The visitor is being connected to the guest network."
+            ? `The visitor is being connected to the guest network (access: ${describeAccessDuration(request.accessDurationSeconds).toLowerCase()}).`
             : "The visitor has been told their request was not approved."}
         </p>
         <Details request={request} guestLine={guestLine} />
@@ -110,6 +114,29 @@ export default async function SponsorReviewPage({
 
       <form method="POST" action="/api/sponsor/decision" className="mt-6">
         <input type="hidden" name="token" value={token} />
+
+        <div className="mb-4 flex flex-col gap-1">
+          <label htmlFor="duration" className="text-xs font-medium text-slate-700">
+            Access duration if allowed
+          </label>
+          <select
+            id="duration"
+            name="duration"
+            defaultValue=""
+            className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+          >
+            <option value="">Network default</option>
+            {SPONSOR_ACCESS_DURATIONS.map((d) => (
+              <option key={d.seconds} value={String(d.seconds)}>
+                {d.label}
+              </option>
+            ))}
+          </select>
+          <p className="text-[11px] text-slate-400">
+            How long this device stays authorized on the guest network.
+          </p>
+        </div>
+
         <div className="flex flex-col gap-3">
           <button
             type="submit"

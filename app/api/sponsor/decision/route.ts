@@ -3,6 +3,7 @@ import { log } from "@/lib/log";
 import { appBaseUrl, allowedHosts } from "@/lib/env";
 import { hostIsAllowed, getRequestMetadata } from "@/lib/request/getRequestMetadata";
 import { isWellFormedToken } from "@/lib/sponsorship/token";
+import { parseAccessDuration } from "@/lib/sponsorship/duration";
 import {
   decideSponsorship,
   persistExpiryIfDue,
@@ -48,10 +49,13 @@ export async function POST(request: NextRequest) {
 
   let token: string | null = null;
   let action: string | null = null;
+  let duration: number | null = null;
   try {
     const form = await request.formData();
     token = form.get("token")?.toString() ?? null;
     action = form.get("action")?.toString() ?? null;
+    // Closed allowlist; anything else degrades to the network default.
+    duration = parseAccessDuration(form.get("duration")?.toString());
   } catch {
     return NextResponse.redirect(new URL("/sponsor/invalid", base), 303);
   }
@@ -69,10 +73,12 @@ export async function POST(request: NextRequest) {
   const current = await persistExpiryIfDue(found);
   if (current.status === "PENDING") {
     const meta = getRequestMetadata(request.headers);
-    await decideSponsorship(current, action, {
-      sourceIp: meta.sourceIp,
-      userAgent: meta.userAgent,
-    });
+    await decideSponsorship(
+      current,
+      action,
+      { sourceIp: meta.sourceIp, userAgent: meta.userAgent },
+      duration
+    );
   }
   // Whatever happened — applied, raced, already decided, expired — the review
   // page renders the row's truth.

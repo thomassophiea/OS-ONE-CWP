@@ -93,6 +93,8 @@ value; null in the overlay always means "use the variable".
 | `EMAIL_FROM` | From header for SMTP mail |
 | `RESEND_API_KEY` / `RESEND_FROM` | Resend HTTPS API — **the only transport that works on Railway**, which blocks all outbound SMTP (587/465/2525 measured dead from the container, 2026-08-31) |
 | `SMTP_URL` *or* `SMTP_HOST`/`SMTP_PORT`/`SMTP_SECURE`/`SMTP_USER`/`SMTP_PASSWORD` | relay credentials, for hosts with an open SMTP path |
+| `SPONSOR_WEBHOOK_URL` | optional Teams/Slack incoming webhook — posts an Allow/Deny card per request (best-effort; email stays the channel of record) |
+| `SPONSOR_WEBHOOK_FORMAT` | `teams` or `slack`; auto-detected from the URL when unset |
 
 ### Captive Portal API — RFC 8908 (optional)
 

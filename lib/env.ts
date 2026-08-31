@@ -290,6 +290,28 @@ export function smtpSecure(): boolean {
 }
 
 /**
+ * Incoming-webhook URL for sponsor notifications (Teams or Slack), optional.
+ *
+ * Best-effort second channel beside the email: the emailed review link remains
+ * the channel of record, so a webhook failure never cancels a request. The URL
+ * is a capability (anyone holding it can post into the channel) and therefore
+ * lives only in the environment, like every other credential.
+ */
+export function sponsorWebhookUrl(): string | null {
+  return process.env.SPONSOR_WEBHOOK_URL?.trim() || null;
+}
+
+export type SponsorWebhookFormat = "slack" | "teams";
+
+/** Payload dialect; inferred from the URL unless forced. */
+export function sponsorWebhookFormat(): SponsorWebhookFormat {
+  const forced = process.env.SPONSOR_WEBHOOK_FORMAT?.trim().toLowerCase();
+  if (forced === "slack" || forced === "teams") return forced;
+  const url = sponsorWebhookUrl() ?? "";
+  return url.includes("hooks.slack.com") ? "slack" : "teams";
+}
+
+/**
  * Whether the sponsorship workflow is offered at all.
  *
  * Both halves must hold: somewhere to validate sponsors against, and a way to

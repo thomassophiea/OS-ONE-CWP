@@ -92,6 +92,33 @@ that never left. All interpolated values are control-character stripped;
 recipients and subjects are refused outright if header-unsafe; HTML bodies are
 escaped; the Resend key travels only in the Authorization header.
 
+## Teams / Slack notification
+
+When `SPONSOR_WEBHOOK_URL` is set (a Teams Workflows or Slack incoming
+webhook; dialect auto-detected, `SPONSOR_WEBHOOK_FORMAT` to force), each
+request also posts a card into that channel — visitor context plus Allow/Deny
+buttons. The buttons are plain `OpenUrl` links onto the same token-guarded
+review page the email uses, so the webhook needs no callback endpoint, no bot,
+and no ability to decide anything; it is a second bell, best-effort by
+design (failure is audited as `SPONSORSHIP_WEBHOOK_FAILED` and changes
+nothing — the email remains the channel of record). Known limitation: an
+incoming webhook targets one fixed channel, not the individual sponsor;
+per-sponsor delivery needs a bot + directory lookup (future work). The URL is
+a posting capability and lives only in the environment, like every credential.
+
+## Sponsor-chosen access duration
+
+The review page offers Network default / 1 hour / 8 hours / 24 hours / 1 week.
+The value is a **closed allowlist** parsed server-side (`duration.ts`) — a
+tampered form cannot mint an arbitrary grant — recorded on the request at
+decision time, and applied when the gateway confirms the grant:
+`GuestAuthorization.expiresAt = now + duration` at `/success`. It bounds how
+long the *standing authorization* lasts (re-authorization and the AURA ledger
+view); a session the gateway is already running still ends on the WLAN's own
+timers, so effective online time is min(gateway session timeout, remaining
+grant). Expiry of the ledger row is what the portal consults on the device's
+next redirect.
+
 ## Waiting behaviour
 
 Plain bounded polling (4 s cadence, server-owned via `pollAfterMs`, budget

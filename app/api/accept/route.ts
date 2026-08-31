@@ -38,6 +38,7 @@ import {
 } from "@/lib/sponsorship/service";
 import { renderSponsorshipRequestEmail } from "@/lib/email/sponsorshipRequestEmail";
 import { sendEmail } from "@/lib/email/transport";
+import { sendSponsorWebhook } from "@/lib/sponsorship/webhook";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -384,6 +385,26 @@ export async function POST(request: NextRequest) {
         sponsorDomain,
       });
       return fail(base, "sponsorship_unavailable");
+    }
+
+    // Second bell: Teams/Slack card, when a webhook is configured. Strictly
+    // best-effort — the emailed review link is the channel of record, so a
+    // webhook failure is recorded and nothing else.
+    const webhook = await sendSponsorWebhook({
+      guestName,
+      guestEmail,
+      ssid: session.ssid,
+      requestedAt: created.request.createdAt,
+      expiresAt: created.request.expiresAt,
+      reviewUrl: sponsorReviewUrl(created.token),
+    });
+    if (webhook.attempted) {
+      await audit(
+        session.id,
+        webhook.ok ? "SPONSORSHIP_WEBHOOK_SENT" : "SPONSORSHIP_WEBHOOK_FAILED",
+        webhook.ok ? "info" : "warn",
+        { requestId: created.request.id, format: webhook.format ?? null }
+      );
     }
 
     const response = NextResponse.redirect(new URL("/portal/pending", base), 303);

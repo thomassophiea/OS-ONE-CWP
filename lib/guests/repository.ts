@@ -434,6 +434,12 @@ export async function recordAuthorizedGuest(
     policy?: PersistencePolicy;
     /** Guest-supplied values, keyed by registry id. */
     guestFields?: Record<string, string> | null;
+    /**
+     * When this grant should stop standing, when the flow that produced it
+     * carries one (a sponsor-chosen duration). Undefined means "no opinion" —
+     * the existing expiry behaviour is untouched.
+     */
+    expiresAt?: Date | null;
   }
 ): Promise<GuestAuthorization | null> {
   const macAddress = canonicalMac(input.macAddress);
@@ -471,6 +477,7 @@ export async function recordAuthorizedGuest(
         firstSeen: now,
         lastSeen: now,
         authorizedAt: now,
+        ...(input.expiresAt !== undefined ? { expiresAt: input.expiresAt } : {}),
         ...context,
         ...personal,
       },
@@ -488,6 +495,9 @@ export async function recordAuthorizedGuest(
       ...(effectiveStatus(existing, now) === "EXPIRED"
         ? { status: "ACTIVE" as const, expiresAt: null }
         : {}),
+      // A grant that carries its own deadline writes it last, so it also
+      // replaces whatever the revived entry used to say.
+      ...(input.expiresAt !== undefined ? { expiresAt: input.expiresAt } : {}),
       ...context,
       ...personal,
     },

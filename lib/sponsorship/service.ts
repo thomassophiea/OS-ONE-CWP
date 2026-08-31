@@ -219,7 +219,9 @@ export type DecisionOutcome =
 export async function decideSponsorship(
   request: SponsorshipRequest,
   action: DecisionAction,
-  meta: { sourceIp: string | null; userAgent: string | null }
+  meta: { sourceIp: string | null; userAgent: string | null },
+  /** Sponsor-chosen grant length; null = network default. Approvals only. */
+  accessDurationSeconds: number | null = null
 ): Promise<DecisionOutcome> {
   const now = new Date();
   const approved = action === "approve";
@@ -233,6 +235,7 @@ export async function decideSponsorship(
       deniedAt: approved ? null : now,
       decisionIp: meta.sourceIp,
       decisionUserAgent: meta.userAgent,
+      accessDurationSeconds: approved ? accessDurationSeconds : null,
     },
   });
 
@@ -250,6 +253,7 @@ export async function decideSponsorship(
         clientMac: request.clientMac,
         sponsorDomain: request.sponsorEmail.slice(request.sponsorEmail.lastIndexOf("@") + 1),
         decisionIp: meta.sourceIp,
+        ...(approved ? { accessDurationSeconds } : {}),
       }
     );
     return { applied: true, request: current };

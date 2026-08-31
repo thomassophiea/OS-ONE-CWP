@@ -326,6 +326,13 @@ model SponsorshipRequest {
   /// guest. The session's own `authorizedAt` records the grant itself.
   authorizationIssuedAt DateTime?
 
+  /// Access duration the sponsor chose at approval, in seconds. Null means the
+  /// network default (no ledger expiry beyond the WLAN's own timers). Applied
+  /// as `GuestAuthorization.expiresAt = authorizedAt + duration` when the
+  /// gateway confirms the grant — it bounds how long the standing authorization
+  /// lasts, not a live session the gateway is already running.
+  accessDurationSeconds Int?
+
   /// Bounded status-poll accounting, so an abandoned page cannot poll forever.
   checkCount Int @default(0)
 
