@@ -63,7 +63,8 @@ const NOT_TRANSLATED = new Set([
 
 const COGNATES = new Set(["fr:success.sessionLabel", "de:common.optional"]);
 
-const isSampleData = (key: string) => key.endsWith(".placeholder");
+const isSampleData = (key: string) =>
+  key.endsWith(".placeholder") || key.endsWith("Placeholder");
 
 describe("catalogue completeness", () => {
   it("ships eight locales with English first", () => {

@@ -164,6 +164,119 @@ export function onboardingMaxChecks(): number {
   return Number.isFinite(raw) && raw > 0 ? raw : 60;
 }
 
+// ---------------------------------------------------------------------------
+// Employee sponsorship
+//
+// Everything below is optional. With no sponsor domains configured (or no way
+// to deliver email) the portal simply does not offer the sponsorship workflow,
+// and the open guest path is untouched — the same failure mode as secure
+// onboarding, and for the same reason.
+// ---------------------------------------------------------------------------
+
+/**
+ * Email domains an employee sponsor may belong to, lowercase, exact-match.
+ *
+ * A list rather than a single value so a future tenant can allow several
+ * domains without a code change — but matching is always exact and ASCII-only.
+ * Phase 1 configures exactly `extremenetworks.com`.
+ */
+export function sponsorAllowedDomains(
+  env: Record<string, string | undefined> = process.env
+): string[] {
+  return (env.SPONSOR_ALLOWED_DOMAINS ?? "")
+    .split(",")
+    .map((d) => d.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+/**
+ * How long a sponsor has to decide.
+ *
+ * Defaults to the portal session TTL (15 minutes): an approval that arrives
+ * after the guest's session — and the gateway token inside it — has expired
+ * cannot authorize anything, so a longer window would only manufacture the
+ * "approved but never online" case. Enforced server-side on every read.
+ */
+export function sponsorshipTtlSeconds(): number {
+  const raw = Number(process.env.SPONSORSHIP_TTL_SECONDS);
+  return Number.isFinite(raw) && raw > 0 ? raw : sessionTtlSeconds();
+}
+
+/** Cap on sponsorship requests one portal session may create. */
+export function sponsorshipMaxPerSession(): number {
+  const raw = Number(process.env.SPONSORSHIP_MAX_PER_SESSION);
+  return Number.isFinite(raw) && raw > 0 ? raw : 3;
+}
+
+/** Cap on status polls per request, so an abandoned tab cannot poll forever. */
+export function sponsorshipMaxStatusChecks(): number {
+  const raw = Number(process.env.SPONSORSHIP_MAX_STATUS_CHECKS);
+  return Number.isFinite(raw) && raw > 0 ? raw : 300;
+}
+
+export type EmailTransportKind = "smtp" | "console";
+
+/**
+ * Which email transport is usable, or null when none is.
+ *
+ * SMTP wins whenever it is configured. The console transport — the rendered
+ * message written to the structured log — is the development default, and in
+ * production it must be asked for by name (`EMAIL_TRANSPORT=console`): the
+ * emailed URL carries the approval token, and printing it into a shared log
+ * stream is a deliberate demo-environment decision, never a fallback.
+ */
+export function emailTransportKind(): EmailTransportKind | null {
+  const forced = process.env.EMAIL_TRANSPORT?.trim().toLowerCase();
+  if (forced === "console") return "console";
+  const smtpConfigured = Boolean(
+    process.env.SMTP_URL?.trim() || process.env.SMTP_HOST?.trim()
+  );
+  if (forced === "smtp") return smtpConfigured ? "smtp" : null;
+  if (smtpConfigured) return "smtp";
+  return isProduction() ? null : "console";
+}
+
+/** From address for portal mail. Required for SMTP; cosmetic for console. */
+export function emailFrom(): string {
+  return process.env.EMAIL_FROM?.trim() || "guest-portal@localhost";
+}
+
+export function smtpUrl(): string | null {
+  return process.env.SMTP_URL?.trim() || null;
+}
+
+export function smtpHost(): string | null {
+  return process.env.SMTP_HOST?.trim() || null;
+}
+
+export function smtpPort(): number {
+  const raw = Number(process.env.SMTP_PORT);
+  return Number.isFinite(raw) && raw > 0 ? raw : 587;
+}
+
+export function smtpUser(): string | null {
+  return process.env.SMTP_USER?.trim() || null;
+}
+
+export function smtpPassword(): string | null {
+  return process.env.SMTP_PASSWORD || null;
+}
+
+export function smtpSecure(): boolean {
+  return (process.env.SMTP_SECURE ?? "false").toLowerCase() === "true";
+}
+
+/**
+ * Whether the sponsorship workflow is offered at all.
+ *
+ * Both halves must hold: somewhere to validate sponsors against, and a way to
+ * reach them. A sponsorship option that accepts a request it can never deliver
+ * would strand a guest on a waiting page for a decision nobody was asked for.
+ */
+export function sponsorshipConfigured(): boolean {
+  return sponsorAllowedDomains().length > 0 && emailTransportKind() !== null;
+}
+
 /**
  * Shared secret for deriving CAPPORT per-client tokens from a station MAC.
  *

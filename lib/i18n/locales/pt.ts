@@ -74,6 +74,33 @@ export const pt: Messages = {
     note: "Primeiro terá acesso à Internet e depois ajudamo-lo a mudar.",
   },
 
+  sponsorship: {
+    offerTitle: "Patrocínio de colaborador",
+    offerBody:
+      "Está a visitar alguém? Introduza o e-mail de trabalho do seu anfitrião e ele poderá aprovar o seu acesso a partir da caixa de entrada.",
+    sponsorEmailLabel: "E-mail de trabalho do patrocinador",
+    sponsorEmailPlaceholder: "nome@{domain}",
+    identityNote: "O seu nome e o seu e-mail são necessários para que o patrocinador saiba quem está a pedir.",
+    submit: "Pedir acesso patrocinado",
+    note: "Ficará online assim que o seu patrocinador aprovar.",
+    validationFormat: "Introduza um e-mail de patrocinador válido.",
+    validationDomain: "O e-mail do seu patrocinador tem de terminar em @{domain}.",
+    pendingTitle: "A aguardar o seu patrocinador",
+    pendingBody: "Pedimos a {sponsor} que aprove o seu acesso. Esta página atualiza-se automaticamente.",
+    pendingHint: "Mantenha esta página aberta. O pedido expira {minutes} minutos depois de ser enviado.",
+    approvedTitle: "Aprovado",
+    approvedBody: "O seu patrocinador aprovou o pedido. A ligar…",
+    deniedTitle: "Pedido não aprovado",
+    deniedBody:
+      "O seu patrocinador não aprovou este pedido. Se acha que é um engano, contacte diretamente o seu anfitrião.",
+    expiredTitle: "Pedido expirado",
+    expiredBody:
+      "O seu patrocinador não respondeu a tempo. Volte a ligar-se à rede Wi-Fi para enviar um novo pedido.",
+    stoppedBody: "Deixámos de verificar automaticamente. Recarregue esta página para verificar outra vez.",
+    reload: "Verificar outra vez",
+    statusError: "Não foi possível verificar o estado do seu pedido. Recarregue esta página para tentar novamente.",
+  },
+
   success: {
     title: "Está ligado",
     forwarding: "A levá-lo de volta ao ponto onde estava…",
@@ -243,6 +270,14 @@ export const pt: Messages = {
     invalid_details: {
       title: "Verifique os seus dados",
       body: "Algumas das informações introduzidas não puderam ser aceites. Volte à página de acesso e tente outra vez.",
+    },
+    sponsorship_unavailable: {
+      title: "Acesso patrocinado indisponível",
+      body: "De momento não é possível pedir acesso patrocinado. Pode ligar-se com o acesso de visitante normal ou contactar o administrador da rede.",
+    },
+    sponsorship_limit: {
+      title: "Demasiados pedidos",
+      body: "Esta sessão atingiu o limite de pedidos de patrocínio. Volte a ligar-se à rede Wi-Fi para recomeçar.",
     },
   },
 

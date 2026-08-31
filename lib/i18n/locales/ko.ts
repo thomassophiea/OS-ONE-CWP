@@ -74,6 +74,30 @@ export const ko: Messages = {
     note: "먼저 인터넷에 연결된 뒤 전환을 도와드립니다.",
   },
 
+  sponsorship: {
+    offerTitle: "임직원 스폰서 접속",
+    offerBody: "방문 중이신가요? 방문 대상 직원의 회사 이메일 주소를 입력하면 그 직원이 받은 편지함에서 접속을 승인할 수 있습니다.",
+    sponsorEmailLabel: "스폰서의 회사 이메일",
+    sponsorEmailPlaceholder: "name@{domain}",
+    identityNote: "누가 요청했는지 스폰서가 알 수 있도록 이름과 이메일 주소가 필요합니다.",
+    submit: "스폰서 승인 요청",
+    note: "스폰서가 승인하는 즉시 인터넷을 사용할 수 있습니다.",
+    validationFormat: "유효한 스폰서 이메일 주소를 입력해 주십시오.",
+    validationDomain: "스폰서의 이메일 주소는 @{domain}(으)로 끝나야 합니다.",
+    pendingTitle: "스폰서의 승인을 기다리는 중",
+    pendingBody: "{sponsor} 님에게 접속 승인을 요청했습니다. 이 페이지는 자동으로 갱신됩니다.",
+    pendingHint: "이 페이지를 열어 두십시오. 요청은 전송 후 {minutes}분이 지나면 만료됩니다.",
+    approvedTitle: "승인됨",
+    approvedBody: "스폰서가 요청을 승인했습니다. 연결하는 중…",
+    deniedTitle: "요청이 승인되지 않음",
+    deniedBody: "스폰서가 이 요청을 승인하지 않았습니다. 착오라고 생각되면 방문 대상 직원에게 직접 문의해 주십시오.",
+    expiredTitle: "요청이 만료됨",
+    expiredBody: "스폰서가 제시간에 응답하지 않았습니다. Wi-Fi 네트워크에 다시 연결하여 새 요청을 보내 주십시오.",
+    stoppedBody: "자동 확인을 중단했습니다. 다시 확인하려면 이 페이지를 새로 고침해 주십시오.",
+    reload: "다시 확인",
+    statusError: "요청 상태를 확인할 수 없습니다. 이 페이지를 새로 고침하여 다시 시도해 주십시오.",
+  },
+
   success: {
     title: "연결되었습니다",
     forwarding: "이전 페이지로 돌아가는 중…",
@@ -233,6 +257,14 @@ export const ko: Messages = {
     invalid_details: {
       title: "입력하신 정보를 확인해 주십시오",
       body: "입력하신 정보 중 일부를 처리할 수 없었습니다. 로그인 페이지로 돌아가 다시 시도해 주십시오.",
+    },
+    sponsorship_unavailable: {
+      title: "스폰서 접속을 사용할 수 없음",
+      body: "지금은 스폰서 게스트 접속을 요청할 수 없습니다. 일반 게스트 접속으로 연결하거나 네트워크 관리자에게 문의해 주십시오.",
+    },
+    sponsorship_limit: {
+      title: "요청이 너무 많음",
+      body: "이 세션은 스폰서 요청 한도에 도달했습니다. Wi-Fi 네트워크에 다시 연결하여 처음부터 다시 시작해 주십시오.",
     },
   },
 

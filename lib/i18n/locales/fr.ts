@@ -74,6 +74,33 @@ export const fr: Messages = {
     note: "Vous aurez d'abord accès à Internet, puis nous vous aiderons à basculer.",
   },
 
+  sponsorship: {
+    offerTitle: "Parrainage par un employé",
+    offerBody:
+      "Vous rendez visite à quelqu'un ? Saisissez l'adresse e-mail professionnelle de votre hôte : il pourra approuver votre accès depuis sa boîte de réception.",
+    sponsorEmailLabel: "E-mail professionnel du parrain",
+    sponsorEmailPlaceholder: "nom@{domain}",
+    identityNote: "Votre nom et votre adresse e-mail sont requis pour que votre parrain sache qui fait la demande.",
+    submit: "Demander un accès parrainé",
+    note: "Vous serez en ligne dès que votre parrain aura approuvé.",
+    validationFormat: "Saisissez une adresse e-mail de parrain valide.",
+    validationDomain: "L'adresse e-mail de votre parrain doit se terminer par @{domain}.",
+    pendingTitle: "En attente de votre parrain",
+    pendingBody: "Nous avons demandé à {sponsor} d'approuver votre accès. Cette page se met à jour automatiquement.",
+    pendingHint: "Gardez cette page ouverte. La demande expire {minutes} minutes après son envoi.",
+    approvedTitle: "Approuvé",
+    approvedBody: "Votre parrain a approuvé votre demande. Connexion en cours…",
+    deniedTitle: "Demande non approuvée",
+    deniedBody:
+      "Votre parrain n'a pas approuvé cette demande. Si vous pensez qu'il s'agit d'une erreur, contactez directement votre hôte.",
+    expiredTitle: "Demande expirée",
+    expiredBody:
+      "Votre parrain n'a pas répondu à temps. Reconnectez-vous au réseau Wi-Fi pour envoyer une nouvelle demande.",
+    stoppedBody: "Nous avons cessé de vérifier automatiquement. Rechargez cette page pour vérifier à nouveau.",
+    reload: "Vérifier à nouveau",
+    statusError: "Impossible de vérifier l'état de votre demande. Rechargez cette page pour réessayer.",
+  },
+
   success: {
     title: "Vous êtes connecté",
     forwarding: "Retour à votre page précédente…",
@@ -241,6 +268,14 @@ export const fr: Messages = {
     invalid_details: {
       title: "Vérifiez vos informations",
       body: "Certaines informations saisies n'ont pas pu être acceptées. Revenez à la page de connexion et réessayez.",
+    },
+    sponsorship_unavailable: {
+      title: "L'accès parrainé est indisponible",
+      body: "L'accès invité parrainé ne peut pas être demandé pour le moment. Vous pouvez utiliser l'accès invité standard ou contacter l'administrateur du réseau.",
+    },
+    sponsorship_limit: {
+      title: "Trop de demandes",
+      body: "Cette session a atteint la limite de demandes de parrainage. Reconnectez-vous au réseau Wi-Fi pour recommencer.",
     },
   },
 

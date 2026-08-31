@@ -227,8 +227,9 @@ model GuestSession {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
-  auditEvents AuditEvent[]
-  onboardings OnboardingSession[]
+  auditEvents  AuditEvent[]
+  onboardings  OnboardingSession[]
+  sponsorships SponsorshipRequest[]
 
   @@index([clientMac])
   @@index([gatewayToken])
@@ -241,6 +242,100 @@ model GuestSession {
   // full scan; it is the only question this flag is ever aggregated for.
   @@index([personalDataAllowed])
   @@index([capportTokenHash])
+}
+
+/// Lifecycle of one employee-sponsorship request.
+///
+/// `APPROVED` records the sponsor's decision, nothing more. The guest becomes
+/// authorized through exactly the same mechanism as the consent flow — a
+/// presigned `/ext_approval.php` URL fetched by the guest's own browser — and
+/// that later step is what stamps the *session* `AUTHORIZED`. A sponsorship can
+/// therefore be APPROVED while the guest never got online (they closed the
+/// page, the session expired), and the two records deliberately say different
+/// things.
+enum SponsorshipStatus {
+  /// Waiting for the sponsor to decide.
+  PENDING
+  /// The sponsor allowed the request.
+  APPROVED
+  /// The sponsor refused the request.
+  DENIED
+  /// `expiresAt` passed with no decision.
+  EXPIRED
+  /// Withdrawn — superseded by a newer request from the same session.
+  CANCELLED
+}
+
+/// One guest's request to be vouched for by an employee.
+///
+/// The approval credential is a 32-byte random token that exists only inside
+/// the emailed URL; this row keeps its SHA-256. The token authorizes reading
+/// the review page and posting a decision — it can never authorize the guest
+/// directly, because the network grant is issued to the *guest's* browser via
+/// the session, not to whoever holds the token.
+///
+/// `guestName` / `guestEmail` are personal data and follow the session's
+/// storage prohibition: under `personalDataAllowed = false` they are never
+/// written, and the sponsor sees the request identified by network context
+/// only. `sponsorEmail` is retained regardless — who vouched for a device is
+/// operational audit data, the same class of fact as `GuestAuthorization.revokedBy`.
+model SponsorshipRequest {
+  id        String            @id @default(cuid())
+  status    SponsorshipStatus @default(PENDING)
+  /// SHA-256 hex of the emailed approval token. The raw token is never stored.
+  tokenHash String            @unique
+
+  sessionId String
+  session   GuestSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  /// Station MAC at request time, canonical form. Kept denormalised so the
+  /// audit question "which device was this for?" survives session pruning.
+  clientMac String?
+
+  /// What the guest typed about themselves — subject to the storage prohibition.
+  guestName  String?
+  guestEmail String?
+  /// The employee asked to vouch. Validated against SPONSOR_ALLOWED_DOMAINS
+  /// server-side before this row exists.
+  sponsorEmail String
+
+  // ---- network context snapshot, for the sponsor email and review page ----
+  ssid   String?
+  apName String?
+
+  // ---- lifecycle ----
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  /// Hard deadline for the decision, enforced server-side on every read.
+  expiresAt DateTime
+
+  /// When the request email was accepted by the transport.
+  emailSentAt DateTime?
+  /// First time the review page was opened. A mail scanner following the link
+  /// lands here too, so this is telemetry, never evidence of human review.
+  viewedAt DateTime?
+
+  /// When the decision was made (either way).
+  decidedAt  DateTime?
+  approvedAt DateTime?
+  deniedAt   DateTime?
+  /// Peer address and user agent that posted the decision, for audit.
+  decisionIp        String?
+  decisionUserAgent String?
+
+  /// When the presigned gateway approval URL was first handed to the waiting
+  /// guest. The session's own `authorizedAt` records the grant itself.
+  authorizationIssuedAt DateTime?
+
+  /// Bounded status-poll accounting, so an abandoned page cannot poll forever.
+  checkCount Int @default(0)
+
+  @@index([sessionId])
+  @@index([status])
+  @@index([clientMac])
+  @@index([sponsorEmail])
+  @@index([expiresAt])
+  @@index([createdAt])
+  @@index([status, expiresAt])
 }
 
 model AuditEvent {

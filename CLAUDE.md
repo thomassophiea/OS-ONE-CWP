@@ -62,6 +62,30 @@ value: DHCP hands out the URI before the session exists.
 
 Full design and the gateway findings: `docs/CAPPORT.md`.
 
+## Employee sponsorship
+
+The consent form's third workflow. `mode=sponsor` at `/api/accept` records
+consent, creates a `SponsorshipRequest` (PENDING, TTL-stamped), emails the
+sponsor, and authorizes **nothing** — the guest waits at `/portal/pending`.
+
+Three rules carry the security of it:
+
+- **The emailed links are GETs onto a read-only review page** — mail scanners
+  fetch every URL, so nothing may commit on GET. The decision is a POST from
+  `/sponsor/{token}`, and the PENDING→decided transition is one conditional
+  `UPDATE`, so replays and races have exactly one winner.
+- **Approval releases, never grants.** The guest's own browser still fetches
+  the same presigned `/ext_approval.php` URL (built by the same signer) from
+  the status endpoint, bound to the signed session cookie. One authorization
+  stack, no exceptions.
+- **Sponsor addresses are validated server-side, ASCII-only, exact-domain**
+  (`SPONSOR_ALLOWED_DOMAINS`) — `sponsorEmailPolicy.ts` is the boundary and
+  `extremenetworks.com.evil.org` must never pass it.
+
+Feature off ⇒ form byte-identical to before. Guest identity fields follow the
+storage prohibition; `sponsorEmail` is operational audit data (kept), but logs
+and audit details carry only its domain. Full design: `docs/SPONSORSHIP.md`.
+
 ## Storage prohibition and localisation
 
 `GuestSession.personalDataAllowed` is the session-level answer to "may personal

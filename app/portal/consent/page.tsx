@@ -17,7 +17,10 @@ import {
 import { requestLocale } from "@/lib/i18n/server";
 import { configuredGuestFields } from "@/lib/guestFields/registry";
 import { describeFieldError, type FieldError } from "@/lib/guestFields/validate";
-import type { Messages } from "@/lib/i18n";
+import { sponsorAllowedDomains, sponsorshipConfigured } from "@/lib/env";
+import { fieldsForConsentRender } from "@/lib/sponsorship/fields";
+import { latestSponsorshipForSession } from "@/lib/sponsorship/service";
+import { format, type Messages } from "@/lib/i18n";
 import LanguagePicker from "@/app/LanguagePicker";
 import ConsentForm, { type RenderedField } from "./ConsentForm";
 
@@ -65,6 +68,15 @@ export default async function ConsentPage({
     redirect("/success");
   }
 
+  // A session that already asked for sponsorship belongs on the waiting page,
+  // whatever the request's state — that page renders denied and expired too.
+  // Failure here degrades to showing the form, which is the pre-sponsorship
+  // behaviour and always safe.
+  if (session.csrfTokenHash === null) {
+    const sponsorship = await latestSponsorshipForSession(session.id).catch(() => null);
+    if (sponsorship) redirect("/portal/pending");
+  }
+
   // The secure option is drawn only if a secure WLAN is actually configured and
   // readable. Any failure here removes the second button and leaves the open
   // guest path exactly as it was — this lookup must never be able to break the
@@ -97,7 +109,31 @@ export default async function ConsentPage({
     }
   }
 
-  const fields: RenderedField[] = configuredGuestFields().map((field) => {
+  // Employee sponsorship is drawn only when configured (allowed domains plus a
+  // working email transport). Absent, the form is byte-identical to before.
+  const sponsorshipOffered = sponsorshipConfigured();
+  const sponsorDomain = sponsorshipOffered ? sponsorAllowedDomains()[0] : null;
+  const sponsorError = errorsByField.get("sponsorEmail") ?? null;
+  const sponsorship =
+    sponsorshipOffered && sponsorDomain
+      ? {
+          domain: sponsorDomain,
+          error: sponsorError
+            ? sponsorError.messageKey === ("domain" as string)
+              ? format(messages.sponsorship.validationDomain, { domain: sponsorDomain })
+              : messages.sponsorship.validationFormat
+            : null,
+          value:
+            typeof params.v_sponsorEmail === "string"
+              ? params.v_sponsorEmail.slice(0, 254)
+              : "",
+        }
+      : null;
+
+  const fields: RenderedField[] = fieldsForConsentRender(
+    configuredGuestFields(),
+    sponsorshipOffered
+  ).map((field) => {
     const error = errorsByField.get(field.id) ?? null;
     const submitted = params[`v_${field.id}`];
     return {
@@ -158,8 +194,10 @@ export default async function ConsentPage({
             privacy: messages.privacy,
             fields: messages.fields,
             secureOffer: messages.secureOffer,
+            sponsorship: messages.sponsorship,
           }}
           secureNetwork={secureNetwork}
+          sponsorship={sponsorship}
           fields={fields}
         />
 

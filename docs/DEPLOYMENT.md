@@ -72,6 +72,22 @@ offered, and applies whether or not any field is collected.
 Localisation needs no configuration either. Adding a language is a catalogue
 file and one registry row.
 
+### Employee sponsorship (optional)
+
+Off unless `SPONSOR_ALLOWED_DOMAINS` is set **and** an email transport is
+usable; absent either, the consent form has no sponsorship option and the open
+path is untouched. See [SPONSORSHIP.md](SPONSORSHIP.md).
+
+| Variable | Value |
+|---|---|
+| `SPONSOR_ALLOWED_DOMAINS` | `extremenetworks.com` |
+| `SPONSORSHIP_TTL_SECONDS` | default: `PORTAL_SESSION_TTL_SECONDS` |
+| `SPONSORSHIP_MAX_PER_SESSION` | `3` |
+| `SPONSORSHIP_MAX_STATUS_CHECKS` | `300` |
+| `EMAIL_TRANSPORT` | `smtp`, or `console` (explicit-only in production — the logged message contains the review URL) |
+| `EMAIL_FROM` | From header for portal mail |
+| `SMTP_URL` *or* `SMTP_HOST`/`SMTP_PORT`/`SMTP_SECURE`/`SMTP_USER`/`SMTP_PASSWORD` | relay credentials |
+
 ### Captive Portal API — RFC 8908 (optional)
 
 | Variable | Value |

@@ -28,7 +28,17 @@ import {
 import { audit, isExpired } from "@/lib/session/repository";
 import { configuredGuestFields } from "@/lib/guestFields/registry";
 import { validateGuestFields } from "@/lib/guestFields/validate";
-import { auditablePolicy, policyFromConsent } from "@/lib/privacy/policy";
+import { auditablePolicy, policyFromConsent, type PersistencePolicy } from "@/lib/privacy/policy";
+import { sponsorAllowedDomains, sponsorshipConfigured } from "@/lib/env";
+import { validateSponsorEmail } from "@/lib/sponsorship/sponsorEmailPolicy";
+import { sponsorshipGuestFields } from "@/lib/sponsorship/fields";
+import {
+  createSponsorshipRequest,
+  latestSponsorshipForSession,
+  sponsorReviewUrl,
+} from "@/lib/sponsorship/service";
+import { renderSponsorshipRequestEmail } from "@/lib/email/sponsorshipRequestEmail";
+import { sendEmail } from "@/lib/email/transport";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -80,10 +90,12 @@ export async function POST(request: NextRequest) {
   let agreed = false;
   let interaction: string | null = null;
   let dwellMs = 0;
-  // Which of the two workflows the guest chose. Anything other than an explicit
-  // "secure" is the open path, so a missing, unknown or forged value degrades to
-  // the behaviour that existed before this field did.
+  // Which of the three workflows the guest chose. Anything other than an
+  // explicit "secure" or "sponsor" is the open path, so a missing, unknown or
+  // forged value degrades to the behaviour that existed before this field did.
   let secureRequested = false;
+  let sponsorRequested = false;
+  let rawSponsorEmail: string | null = null;
   // The storage prohibition, as submitted. Read here and decided here — the
   // browser can hide inputs or omit this field entirely, so what the *server*
   // records is what every later component reads.
@@ -95,11 +107,19 @@ export async function POST(request: NextRequest) {
     agreed = form.get("agree")?.toString() === "yes";
     interaction = form.get("interaction")?.toString() ?? null;
     dwellMs = Number(form.get("dwellMs")?.toString() ?? "0");
-    secureRequested = form.get("mode")?.toString() === "secure";
+    const mode = form.get("mode")?.toString();
+    secureRequested = mode === "secure";
+    sponsorRequested = mode === "sponsor";
+    rawSponsorEmail = form.get("sponsorEmail")?.toString() ?? null;
     doNotStore = form.get("doNotStorePersonalData")?.toString() === "yes";
-    // Only the configured fields are read off the form. An extra input a client
-    // invents is never looked at, so it cannot become a stored value.
-    for (const field of configuredGuestFields()) {
+    // Only the recognised fields are read off the form — the configured set,
+    // widened with the identity fields when the guest chose sponsorship. An
+    // extra input a client invents is never looked at, so it cannot become a
+    // stored value.
+    const readable = sponsorRequested
+      ? sponsorshipGuestFields(configuredGuestFields())
+      : configuredGuestFields();
+    for (const field of readable) {
       rawFields[field.id] = form.get(field.id)?.toString();
     }
   } catch {
@@ -129,6 +149,22 @@ export async function POST(request: NextRequest) {
       status: session.status,
     });
     return NextResponse.redirect(new URL("/success", base), 303);
+  }
+
+  // A sponsorship submission burns the CSRF token but leaves the session
+  // STARTED (nothing has been authorized yet), so a re-POST of the form — back
+  // button, double tap — arrives here with the token already spent. Send it to
+  // the waiting page, where the request's real state is rendered, rather than
+  // failing it as an attack.
+  if (session.csrfTokenHash === null && session.status === "STARTED") {
+    const existing = await latestSponsorshipForSession(session.id).catch(() => null);
+    if (existing) {
+      await audit(session.id, "ACCEPT_SPONSORSHIP_RESUBMIT", "info", {
+        requestId: existing.id,
+        requestStatus: existing.status,
+      });
+      return NextResponse.redirect(new URL("/portal/pending", base), 303);
+    }
   }
 
   // The token must match both the server-side hash and the HttpOnly cookie,
@@ -181,16 +217,47 @@ export async function POST(request: NextRequest) {
   // Validation runs server-side against the registry. A guest who typed a
   // malformed email is sent back with the message in their own language and
   // their other answers intact — carried in the redirect, never in storage.
-  const configured = configuredGuestFields();
+  //
+  // The sponsor path validates a stricter set: a sponsor is vouching for a
+  // person, so name and email are mandatory there no matter what the
+  // deployment collects on the open path.
+  const configured = sponsorRequested
+    ? sponsorshipGuestFields(configuredGuestFields())
+    : configuredGuestFields();
   const validation = validateGuestFields(configured, rawFields);
-  if (validation.errors.length > 0) {
+  const allErrors: { fieldId: string; messageKey: string }[] = [...validation.errors];
+
+  // The sponsor address is validated with its own, stricter policy: it is not
+  // a guest detail, it is the selector for who gets asked to grant access.
+  let sponsorEmail: string | null = null;
+  if (sponsorRequested) {
+    if (!sponsorshipConfigured()) {
+      await audit(session.id, "SPONSORSHIP_NOT_CONFIGURED", "warn", {
+        clientMac: session.clientMac,
+      });
+      return fail(base, "sponsorship_unavailable");
+    }
+    const verdict = validateSponsorEmail(rawSponsorEmail, sponsorAllowedDomains());
+    if (verdict.ok) {
+      sponsorEmail = verdict.email;
+    } else {
+      allErrors.push({ fieldId: "sponsorEmail", messageKey: verdict.reason });
+    }
+  }
+
+  if (allErrors.length > 0) {
     await audit(session.id, "ACCEPT_FIELDS_INVALID", "warn", {
       clientMac: session.clientMac,
       // Which fields failed and why — never what was in them.
-      invalidFields: validation.errors.map((e) => `${e.fieldId}:${e.messageKey}`),
+      invalidFields: allErrors.map((e) => `${e.fieldId}:${e.messageKey}`),
+      workflow: sponsorRequested ? "sponsor" : secureRequested ? "secure" : "open",
       ...auditablePolicy(policy),
     });
-    return failValidation(base, validation.errors, validation.values, policy.personalDataAllowed);
+    const echoValues: Record<string, string> = { ...validation.values };
+    if (sponsorRequested && rawSponsorEmail) {
+      echoValues.sponsorEmail = rawSponsorEmail.slice(0, 254);
+    }
+    return failValidation(base, allErrors, echoValues, policy.personalDataAllowed);
   }
 
   if (isExpired(session)) {
@@ -225,6 +292,101 @@ export async function POST(request: NextRequest) {
       gatewayHost: session.gatewayHost,
     });
     return fail(base, "unsupported_gateway");
+  }
+
+  // --- sponsorship: consent recorded, authorization deferred ---------------
+  // Everything above this point — CSRF, deliberate-action gates, field
+  // validation, session expiry, callback completeness, the gateway allowlist —
+  // applied identically. What changes is only what happens next: no approval
+  // URL is issued. The sponsor's decision is what will release it, through
+  // exactly the same signer, from the status endpoint the waiting page polls.
+  if (sponsorRequested && sponsorEmail) {
+    const meta = getRequestMetadata(request.headers);
+    const now = new Date();
+    const guestName = validation.values.fullName ?? "";
+    const guestEmail = validation.values.email ?? "";
+
+    try {
+      await prisma.guestSession.update({
+        where: { id: session.id },
+        data: {
+          // The guest has consented; nothing has been authorized. The session
+          // stays STARTED until the sponsor's approval releases the URL.
+          acceptedTerms: true,
+          acceptedAt: now,
+          personalDataAllowed: policy.personalDataAllowed,
+          privacyChoiceAt: now,
+          guestFields:
+            policy.personalDataAllowed && Object.keys(validation.values).length > 0
+              ? validation.values
+              : Prisma.DbNull,
+          onboardingRequested: false,
+          // Burn the CSRF token so the form cannot be replayed into a second
+          // sponsorship request.
+          csrfTokenHash: null,
+          sourceIp: meta.sourceIp ?? session.sourceIp,
+        },
+      });
+    } catch (err) {
+      log.error("sponsorship_session_update_failed", { err });
+      return fail(base, "unavailable");
+    }
+
+    const created = await createSponsorshipRequest({
+      session,
+      guestName,
+      guestEmail,
+      sponsorEmail,
+      policy,
+    });
+    if (!created.ok) {
+      return fail(base, created.reason === "limit" ? "sponsorship_limit" : "unavailable");
+    }
+
+    const sponsorDomain = sponsorEmail.slice(sponsorEmail.lastIndexOf("@") + 1);
+    const message = renderSponsorshipRequestEmail({
+      sponsorEmail,
+      guestName,
+      guestEmail,
+      ssid: session.ssid,
+      apName: session.apName,
+      requestedAt: created.request.createdAt,
+      expiresAt: created.request.expiresAt,
+      reviewUrl: sponsorReviewUrl(created.token),
+    });
+
+    try {
+      const { transport } = await sendEmail(message);
+      await prisma.sponsorshipRequest.update({
+        where: { id: created.request.id },
+        data: { emailSentAt: new Date() },
+      });
+      await audit(session.id, "SPONSORSHIP_REQUESTED", "info", {
+        requestId: created.request.id,
+        clientMac: session.clientMac,
+        sponsorDomain,
+        transport,
+        expiresAt: created.request.expiresAt.toISOString(),
+        ...auditablePolicy(policy),
+        durationMs: Date.now() - startedAt,
+      });
+    } catch (err) {
+      // A request whose email never left must not strand the guest on a
+      // waiting page for a decision nobody was asked to make.
+      log.error("sponsorship_email_failed", { err, requestId: created.request.id });
+      await prisma.sponsorshipRequest
+        .update({ where: { id: created.request.id }, data: { status: "CANCELLED" } })
+        .catch(() => undefined);
+      await audit(session.id, "SPONSORSHIP_EMAIL_FAILED", "error", {
+        requestId: created.request.id,
+        sponsorDomain,
+      });
+      return fail(base, "sponsorship_unavailable");
+    }
+
+    const response = NextResponse.redirect(new URL("/portal/pending", base), 303);
+    response.cookies.delete(CSRF_COOKIE);
+    return response;
   }
 
   let identity: string;

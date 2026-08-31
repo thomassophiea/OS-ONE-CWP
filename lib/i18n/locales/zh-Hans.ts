@@ -78,6 +78,30 @@ export const zhHans: Messages = {
     note: "您会先获得互联网访问权限，然后我们再协助您切换。",
   },
 
+  sponsorship: {
+    offerTitle: "员工担保接入",
+    offerBody: "来访拜访某位员工？输入接待人的工作邮箱，对方即可在邮箱中批准您的接入。",
+    sponsorEmailLabel: "担保人工作邮箱",
+    sponsorEmailPlaceholder: "name@{domain}",
+    identityNote: "需要您的姓名和邮箱，以便担保人知道是谁在申请。",
+    submit: "申请担保接入",
+    note: "担保人批准后您即可上网。",
+    validationFormat: "请输入有效的担保人邮箱地址。",
+    validationDomain: "担保人的邮箱地址必须以 @{domain} 结尾。",
+    pendingTitle: "正在等待担保人",
+    pendingBody: "我们已请 {sponsor} 批准您的接入。本页面会自动更新。",
+    pendingHint: "请保持本页面打开。申请在发送 {minutes} 分钟后过期。",
+    approvedTitle: "已批准",
+    approvedBody: "担保人已批准您的申请。正在为您接入…",
+    deniedTitle: "申请未获批准",
+    deniedBody: "担保人未批准此申请。如果您认为这是误操作，请直接联系您的接待人。",
+    expiredTitle: "申请已过期",
+    expiredBody: "担保人未及时回应。请重新连接 Wi-Fi 网络以发送新的申请。",
+    stoppedBody: "已停止自动检查。请重新加载本页面再次检查。",
+    reload: "再次检查",
+    statusError: "无法查询申请状态。请重新加载本页面重试。",
+  },
+
   success: {
     title: "已连接",
     forwarding: "正在返回您之前的页面…",
@@ -233,6 +257,14 @@ export const zhHans: Messages = {
     invalid_details: {
       title: "请检查您的信息",
       body: "您填写的部分信息无法被接受。请返回登录页面后重试。",
+    },
+    sponsorship_unavailable: {
+      title: "担保接入不可用",
+      body: "目前无法申请担保访客接入。您仍可使用标准访客接入，或联系网络管理员。",
+    },
+    sponsorship_limit: {
+      title: "申请次数过多",
+      body: "本次会话的担保申请已达上限。请重新连接 Wi-Fi 网络重新开始。",
     },
   },
 

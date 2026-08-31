@@ -74,6 +74,33 @@ export const de: Messages = {
     note: "Sie erhalten zuerst Internetzugang, danach helfen wir Ihnen beim Wechsel.",
   },
 
+  sponsorship: {
+    offerTitle: "Mitarbeiter-Sponsoring",
+    offerBody:
+      "Zu Besuch bei jemandem? Geben Sie die geschäftliche E-Mail-Adresse Ihres Gastgebers ein — die Freigabe erfolgt direkt aus dessen Postfach.",
+    sponsorEmailLabel: "Geschäftliche E-Mail des Sponsors",
+    sponsorEmailPlaceholder: "name@{domain}",
+    identityNote: "Ihr Name und Ihre E-Mail-Adresse sind erforderlich, damit Ihr Sponsor weiß, wer anfragt.",
+    submit: "Gesponserten Zugang anfordern",
+    note: "Sie sind online, sobald Ihr Sponsor zustimmt.",
+    validationFormat: "Geben Sie eine gültige Sponsor-E-Mail-Adresse ein.",
+    validationDomain: "Die E-Mail-Adresse Ihres Sponsors muss auf @{domain} enden.",
+    pendingTitle: "Warten auf Ihren Sponsor",
+    pendingBody: "Wir haben {sponsor} gebeten, Ihren Zugang freizugeben. Diese Seite aktualisiert sich automatisch.",
+    pendingHint: "Lassen Sie diese Seite geöffnet. Die Anfrage läuft {minutes} Minuten nach dem Senden ab.",
+    approvedTitle: "Freigegeben",
+    approvedBody: "Ihr Sponsor hat Ihre Anfrage freigegeben. Sie werden jetzt verbunden…",
+    deniedTitle: "Anfrage nicht freigegeben",
+    deniedBody:
+      "Ihr Sponsor hat diese Anfrage nicht freigegeben. Wenn Sie das für einen Irrtum halten, wenden Sie sich direkt an Ihren Gastgeber.",
+    expiredTitle: "Anfrage abgelaufen",
+    expiredBody:
+      "Ihr Sponsor hat nicht rechtzeitig geantwortet. Verbinden Sie sich erneut mit dem WLAN, um eine neue Anfrage zu senden.",
+    stoppedBody: "Die automatische Prüfung wurde beendet. Laden Sie diese Seite neu, um erneut zu prüfen.",
+    reload: "Erneut prüfen",
+    statusError: "Der Status Ihrer Anfrage konnte nicht geprüft werden. Laden Sie diese Seite neu und versuchen Sie es erneut.",
+  },
+
   success: {
     title: "Sie sind verbunden",
     forwarding: "Sie werden zurück zur vorherigen Seite gebracht…",
@@ -244,6 +271,14 @@ export const de: Messages = {
     invalid_details: {
       title: "Prüfen Sie Ihre Angaben",
       body: "Einige der eingegebenen Angaben konnten nicht übernommen werden. Kehren Sie zur Anmeldeseite zurück und versuchen Sie es erneut.",
+    },
+    sponsorship_unavailable: {
+      title: "Gesponserter Zugang nicht verfügbar",
+      body: "Gesponserter Gastzugang kann derzeit nicht angefordert werden. Sie können den normalen Gastzugang nutzen oder den Netzwerkadministrator kontaktieren.",
+    },
+    sponsorship_limit: {
+      title: "Zu viele Anfragen",
+      body: "Diese Sitzung hat das Limit für Sponsoring-Anfragen erreicht. Verbinden Sie sich erneut mit dem WLAN, um von vorn zu beginnen.",
     },
   },
 

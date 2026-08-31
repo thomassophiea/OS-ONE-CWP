@@ -103,6 +103,33 @@ export const en = {
     note: "You'll get internet access first, then we'll help you switch.",
   },
 
+  sponsorship: {
+    offerTitle: "Employee Sponsorship",
+    offerBody:
+      "Visiting someone? Enter your host's work email address and they can approve your access from their inbox.",
+    sponsorEmailLabel: "Sponsor's work email",
+    sponsorEmailPlaceholder: "name@{domain}",
+    identityNote: "Your name and email address are required so your sponsor knows who is asking.",
+    submit: "Request Sponsored Access",
+    note: "You'll get online as soon as your sponsor approves.",
+    validationFormat: "Enter a valid sponsor email address.",
+    validationDomain: "Your sponsor's email address must end in @{domain}.",
+    pendingTitle: "Waiting for your sponsor",
+    pendingBody: "We've asked {sponsor} to approve your access. This page updates automatically.",
+    pendingHint: "Keep this page open. The request expires {minutes} minutes after it was sent.",
+    approvedTitle: "Approved",
+    approvedBody: "Your sponsor approved your request. Connecting you now…",
+    deniedTitle: "Request not approved",
+    deniedBody:
+      "Your sponsor did not approve this request. If you think this is a mistake, contact your host directly.",
+    expiredTitle: "Request expired",
+    expiredBody:
+      "Your sponsor didn't respond in time. Reconnect to the Wi-Fi network to send a new request.",
+    stoppedBody: "We've stopped checking automatically. Reload this page to check again.",
+    reload: "Check again",
+    statusError: "We couldn't check the status of your request. Reload this page to try again.",
+  },
+
   success: {
     title: "You're connected",
     forwarding: "Taking you back to where you left off…",
@@ -262,6 +289,14 @@ export const en = {
     invalid_details: {
       title: "Check your details",
       body: "Some of the information you entered couldn't be accepted. Go back to the sign-in page and try again.",
+    },
+    sponsorship_unavailable: {
+      title: "Sponsored access is unavailable",
+      body: "Sponsored guest access can't be requested right now. You can still connect with standard guest access, or contact the network administrator.",
+    },
+    sponsorship_limit: {
+      title: "Too many requests",
+      body: "This session has reached its limit for sponsorship requests. Reconnect to the Wi-Fi network to start again.",
     },
   },
 
