@@ -10,7 +10,7 @@ import { NextResponse } from "next/server";
 import type { GuestSession } from "@prisma/client";
 import { log } from "@/lib/log";
 import { appBaseUrl } from "@/lib/env";
-import { secureOnboardingConfigured } from "@/lib/onboarding/providers/skynet";
+import { effectiveSecureAccess } from "@/lib/config/portal";
 import {
   CAPPORT_CACHE_CONTROL,
   CAPPORT_CONTENT_TYPE,
@@ -21,11 +21,12 @@ import {
 } from "@/lib/capport/state";
 import type { CapportIdentification } from "@/lib/capport/resolve";
 
-export function capportContext(): CapportContext {
+export async function capportContext(): Promise<CapportContext> {
   return {
     baseUrl: appBaseUrl(),
-    // Only advertise the venue URL when there is actually something there.
-    secureSetupPath: secureOnboardingConfigured() ? "/portal/secure" : null,
+    // Only advertise the venue URL when there is actually something there —
+    // configured, readable, and not switched off by the operator.
+    secureSetupPath: (await effectiveSecureAccess()).enabled ? "/portal/secure" : null,
   };
 }
 

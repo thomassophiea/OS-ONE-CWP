@@ -6,10 +6,8 @@ import { SESSION_COOKIE, readSessionCookie } from "@/lib/session/cookie";
 import { isExpired } from "@/lib/session/repository";
 import { looksLikeCaptiveAssistant, toAbsoluteDestination } from "@/lib/captive/safeRedirect";
 import { appBaseUrl } from "@/lib/env";
-import {
-  networkCapabilities,
-  secureOnboardingConfigured,
-} from "@/lib/onboarding/providers/skynet";
+import { networkCapabilities } from "@/lib/onboarding/providers/skynet";
+import { effectiveSecureAccess } from "@/lib/config/portal";
 import { issueHandoffToken } from "@/lib/onboarding/handoff";
 import { requestLocale } from "@/lib/i18n/server";
 import { format, type Messages } from "@/lib/i18n";
@@ -53,7 +51,7 @@ export default async function SecurePage() {
     redirect("/portal/consent");
   }
 
-  if (!secureOnboardingConfigured()) redirect("/success");
+  if (!(await effectiveSecureAccess()).enabled) redirect("/success");
 
   let network;
   try {

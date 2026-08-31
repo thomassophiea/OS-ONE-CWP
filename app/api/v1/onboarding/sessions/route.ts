@@ -11,7 +11,8 @@ import {
   type Platform,
 } from "@/lib/onboarding/platform";
 import { planFor } from "@/lib/onboarding/methods";
-import { networkCapabilities, secureOnboardingConfigured } from "@/lib/onboarding/providers/skynet";
+import { networkCapabilities } from "@/lib/onboarding/providers/skynet";
+import { effectiveSecureAccess } from "@/lib/config/portal";
 import { createOnboarding, liveOnboardingFor } from "@/lib/onboarding/service";
 import { toOnboardingView } from "@/lib/onboarding/serialize";
 import { routeLocale } from "@/lib/i18n/server";
@@ -47,7 +48,7 @@ export async function POST(request: NextRequest) {
     return new NextResponse("Not found", { status: 404 });
   }
 
-  if (!secureOnboardingConfigured()) {
+  if (!(await effectiveSecureAccess()).enabled) {
     return jsonError(
       503,
       "secure_onboarding_unavailable",

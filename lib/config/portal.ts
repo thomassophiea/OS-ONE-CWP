@@ -12,6 +12,7 @@ import {
   guestFieldsFromLists,
   type ConfiguredGuestField,
 } from "@/lib/guestFields/registry";
+import { secureOnboardingConfigured } from "@/lib/onboarding/providers/skynet";
 
 /**
  * The effective portal configuration: the operator-managed `PortalConfig` row
@@ -104,6 +105,32 @@ export async function effectiveSponsorship(): Promise<EffectiveSponsorshipConfig
   const enabled = configured && row?.sponsorshipEnabled !== false;
 
   return { enabled, domains, addresses, ttlSeconds, maxPerSession };
+}
+
+export interface EffectiveSecureAccessConfig {
+  /** A secure WLAN exists in the environment, so the offer is possible. */
+  configured: boolean;
+  /** The consent form actually offers it. */
+  enabled: boolean;
+}
+
+/**
+ * The operator switch follows the sponsorship rule: it can force the offer
+ * off, never conjure it without a configured secure WLAN. Pure so the
+ * decision is testable without a database.
+ */
+export function secureAccessDecision(
+  configured: boolean,
+  stored: boolean | null | undefined
+): EffectiveSecureAccessConfig {
+  return { configured, enabled: configured && stored !== false };
+}
+
+export async function effectiveSecureAccess(): Promise<EffectiveSecureAccessConfig> {
+  const configured = secureOnboardingConfigured();
+  if (!configured) return secureAccessDecision(configured, null);
+  const row = await portalConfigRow();
+  return secureAccessDecision(configured, row?.secureAccessEnabled);
 }
 
 /** The guest fields this deployment collects, operator overlay applied. */

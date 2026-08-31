@@ -53,5 +53,5 @@ export async function GET(request: NextRequest) {
     else if (ambiguous) identification = { how: "unidentified", reason: "ambiguous-address" };
   }
 
-  return capportResponse(identification, capportContext());
+  return capportResponse(identification, await capportContext());
 }

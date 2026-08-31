@@ -42,5 +42,5 @@ export async function GET(
     ? { how: "per-client-uri", session }
     : { how: "unidentified", reason: "unknown-token" };
 
-  return capportResponse(identification, capportContext());
+  return capportResponse(identification, await capportContext());
 }

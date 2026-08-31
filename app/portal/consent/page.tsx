@@ -10,13 +10,14 @@ import {
 } from "@/lib/session/cookie";
 import { isExpired } from "@/lib/session/repository";
 import { normalizeMac } from "@/lib/captive/extractSessionFields";
-import {
-  networkCapabilities,
-  secureOnboardingConfigured,
-} from "@/lib/onboarding/providers/skynet";
+import { networkCapabilities } from "@/lib/onboarding/providers/skynet";
 import { requestLocale } from "@/lib/i18n/server";
 import { describeFieldError, type FieldError } from "@/lib/guestFields/validate";
-import { effectiveGuestFields, effectiveSponsorship } from "@/lib/config/portal";
+import {
+  effectiveGuestFields,
+  effectiveSecureAccess,
+  effectiveSponsorship,
+} from "@/lib/config/portal";
 import { fieldsForConsentRender } from "@/lib/sponsorship/fields";
 import { latestSponsorshipForSession } from "@/lib/sponsorship/service";
 import { format, type Messages } from "@/lib/i18n";
@@ -76,12 +77,12 @@ export default async function ConsentPage({
     if (sponsorship) redirect("/portal/pending");
   }
 
-  // The secure option is drawn only if a secure WLAN is actually configured and
-  // readable. Any failure here removes the second button and leaves the open
-  // guest path exactly as it was — this lookup must never be able to break the
-  // page a guest needs in order to get online.
+  // The secure option is drawn only if a secure WLAN is actually configured,
+  // readable, and not switched off by the operator. Any failure here removes
+  // the second button and leaves the open guest path exactly as it was — this
+  // lookup must never be able to break the page a guest needs to get online.
   let secureNetwork: { ssid: string; securityLabel: string } | null = null;
-  if (secureOnboardingConfigured()) {
+  if ((await effectiveSecureAccess()).enabled) {
     try {
       const { network } = await networkCapabilities();
       const key = network.security as keyof Messages["security"];

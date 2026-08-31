@@ -6,15 +6,23 @@ import { audit } from "@/lib/session/repository";
 import { authorizeInternalRequest, actorFrom } from "@/lib/guests/internalAuth";
 import {
   effectiveGuestFields,
+  effectiveSecureAccess,
   effectiveSponsorship,
   invalidatePortalConfigCache,
   portalConfigRow,
 } from "@/lib/config/portal";
+import { networkCapabilities } from "@/lib/onboarding/providers/skynet";
+import { DEFAULT_LOCALE, LOCALES } from "@/lib/i18n";
 import {
   isAcceptableSponsorDomain,
   validateSponsorEmail,
 } from "@/lib/sponsorship/sponsorEmailPolicy";
-import { sponsorAllowedDomains as envSponsorDomains, emailTransportKind } from "@/lib/env";
+import {
+  approvalUrlTtlSeconds,
+  emailTransportKind,
+  sessionTtlSeconds,
+  sponsorAllowedDomains as envSponsorDomains,
+} from "@/lib/env";
 import { GUEST_FIELD_CATALOGUE, fieldById } from "@/lib/guestFields/registry";
 
 export const runtime = "nodejs";
@@ -39,6 +47,7 @@ type StoredView = {
   sponsorshipMaxPerSession: number | null;
   guestFieldsEnabled: string[] | null;
   guestFieldsRequired: string[] | null;
+  secureAccessEnabled: boolean | null;
   updatedBy: string | null;
   updatedAt: string | null;
 };
@@ -57,29 +66,90 @@ function storedView(row: PortalConfig | null): StoredView {
     sponsorshipMaxPerSession: row?.sponsorshipMaxPerSession ?? null,
     guestFieldsEnabled: splitStored(row?.guestFieldsEnabled ?? null),
     guestFieldsRequired: splitStored(row?.guestFieldsRequired ?? null),
+    secureAccessEnabled: row?.secureAccessEnabled ?? null,
     updatedBy: row?.updatedBy ?? null,
     updatedAt: row?.updatedAt?.toISOString() ?? null,
   };
 }
 
+/**
+ * Non-secret description of the secure WLAN, read the way the consent page
+ * reads it. Null when unconfigured or the gateway is unreadable — the same
+ * degradation the guest sees, so AURA shows the truth rather than the intent.
+ */
+async function secureNetworkView() {
+  try {
+    const { network, qr, appleProfile } = await networkCapabilities();
+    return {
+      ssid: network.ssid,
+      security: network.security,
+      securityLabel: network.securityLabel,
+      hidden: network.hidden,
+      qr,
+      appleProfile,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The consent-form message catalogue, per locale, so a management UI can
+ * render a faithful guest preview without copying strings. Everything here
+ * already travels to every guest browser — nothing is secret.
+ */
+function previewCatalogue() {
+  const messages: Record<string, unknown> = {};
+  for (const { code, messages: m } of LOCALES) {
+    messages[code] = {
+      common: m.common,
+      consent: m.consent,
+      privacy: m.privacy,
+      fields: m.fields,
+      secureOffer: m.secureOffer,
+      sponsorship: m.sponsorship,
+      security: m.security,
+    };
+  }
+  return {
+    locales: LOCALES.map(({ code, nativeName }) => ({ code, nativeName })),
+    defaultLocale: DEFAULT_LOCALE,
+    messages,
+  };
+}
+
 async function fullView() {
-  const [row, sponsorship, guestFields] = await Promise.all([
+  const [row, sponsorship, guestFields, secureAccess] = await Promise.all([
     portalConfigRow(),
     effectiveSponsorship(),
     effectiveGuestFields(),
+    effectiveSecureAccess(),
   ]);
+  const secureNetwork = secureAccess.configured ? await secureNetworkView() : null;
   return {
     stored: storedView(row),
     effective: {
       sponsorship,
       emailTransport: emailTransportKind(),
       guestFields: guestFields.map((f) => ({ id: f.id, required: f.required })),
+      secureAccess: {
+        ...secureAccess,
+        network: secureNetwork,
+        // Named as configuration (credentialProvider.ts is the seam) so a
+        // per-device PPSK provider arrives as a new value, not a new shape.
+        credentialSource: "shared-passphrase",
+      },
+      session: {
+        portalSessionTtlSeconds: sessionTtlSeconds(),
+        approvalUrlTtlSeconds: approvalUrlTtlSeconds(),
+      },
     },
     // What the operator may choose from, so the UI never invents field ids.
     fieldCatalogue: GUEST_FIELD_CATALOGUE.map((f) => ({ id: f.id, personal: f.personal })),
     envDefaults: {
       sponsorAllowedDomains: envSponsorDomains(),
     },
+    preview: previewCatalogue(),
   };
 }
 
@@ -163,6 +233,12 @@ export async function PUT(request: NextRequest) {
     const v = body.sponsorshipEnabled;
     if (v === null || typeof v === "boolean") data.sponsorshipEnabled = v;
     else errors.push("sponsorshipEnabled must be a boolean or null");
+  }
+
+  if ("secureAccessEnabled" in body) {
+    const v = body.secureAccessEnabled;
+    if (v === null || typeof v === "boolean") data.secureAccessEnabled = v;
+    else errors.push("secureAccessEnabled must be a boolean or null");
   }
 
   const intField = (name: string, min: number, max: number) => {

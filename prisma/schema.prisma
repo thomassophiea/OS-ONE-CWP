@@ -375,6 +375,12 @@ model PortalConfig {
   guestFieldsEnabled  String?
   guestFieldsRequired String?
 
+  // ---- secure guest access ----
+  /// Operator switch for the secure-onboarding offer. Null or true = offered
+  /// whenever a secure WLAN is configured and readable; false = force off.
+  /// It can never conjure the offer without SECURE_WLAN_* configuration.
+  secureAccessEnabled Boolean?
+
   /// Who last wrote this, from the caller's X-Actor header. Audit only.
   updatedBy String?
   createdAt DateTime @default(now())
