@@ -41,6 +41,10 @@ import {
 } from "@/lib/session/cookie";
 import { audit, isUniqueViolation } from "@/lib/session/repository";
 import { capportTokenForMac, hashCapportToken } from "@/lib/capport/resolve";
+import {
+  rebindSponsorshipToSession,
+  resumableSponsorshipForMac,
+} from "@/lib/sponsorship/service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -277,6 +281,34 @@ export async function GET(request: NextRequest) {
     if (preAuthResponse) return withSessionCookie(preAuthResponse, sessionId);
     // Falling through means the approval URL could not be built; the guest
     // still gets the ordinary consent flow rather than an error page.
+  }
+
+  // --- resumable sponsorship for this device -------------------------------
+  // The captive-assistant window closing mid-wait is routine, and a reconnect
+  // mints a fresh session with a fresh gateway token. A request that is still
+  // PENDING — or APPROVED and still redeemable — is re-attached to the new
+  // session and the guest lands back on the waiting page instead of being made
+  // to consent and ask their sponsor again. Any failure here degrades to the
+  // ordinary consent flow, which is always safe.
+  if (canonicalClientMac) {
+    try {
+      const resumable = await resumableSponsorshipForMac(canonicalClientMac);
+      if (resumable) {
+        await rebindSponsorshipToSession(resumable, sessionId);
+        // Consent was given on the session that created the request; this
+        // session's form must not be submittable on top of it.
+        await prisma.guestSession.update({
+          where: { id: sessionId },
+          data: { csrfTokenHash: null },
+        });
+        return withSessionCookie(
+          NextResponse.redirect(new URL("/portal/pending", base), 303),
+          sessionId
+        );
+      }
+    } catch (err) {
+      log.error("portal_sponsorship_resume_failed", { err });
+    }
   }
 
   // Redirect to the consent page rather than rendering here: the session id is

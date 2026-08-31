@@ -15,9 +15,8 @@ import {
   secureOnboardingConfigured,
 } from "@/lib/onboarding/providers/skynet";
 import { requestLocale } from "@/lib/i18n/server";
-import { configuredGuestFields } from "@/lib/guestFields/registry";
 import { describeFieldError, type FieldError } from "@/lib/guestFields/validate";
-import { sponsorAllowedDomains, sponsorshipConfigured } from "@/lib/env";
+import { effectiveGuestFields, effectiveSponsorship } from "@/lib/config/portal";
 import { fieldsForConsentRender } from "@/lib/sponsorship/fields";
 import { latestSponsorshipForSession } from "@/lib/sponsorship/service";
 import { format, type Messages } from "@/lib/i18n";
@@ -110,19 +109,24 @@ export default async function ConsentPage({
   }
 
   // Employee sponsorship is drawn only when configured (allowed domains plus a
-  // working email transport). Absent, the form is byte-identical to before.
-  const sponsorshipOffered = sponsorshipConfigured();
-  const sponsorDomain = sponsorshipOffered ? sponsorAllowedDomains()[0] : null;
+  // working email transport, and not switched off by the operator). Absent,
+  // the form is byte-identical to before.
+  const sponsorCfg = await effectiveSponsorship();
+  const sponsorshipOffered = sponsorCfg.enabled;
+  const sponsorDomain = sponsorshipOffered ? (sponsorCfg.domains[0] ?? null) : null;
   const sponsorError = errorsByField.get("sponsorEmail") ?? null;
+  const sponsorErrorText = (key: string): string => {
+    if (key === "domain" && sponsorDomain) {
+      return format(messages.sponsorship.validationDomain, { domain: sponsorDomain });
+    }
+    if (key === "notAllowed") return messages.sponsorship.validationNotAllowed;
+    return messages.sponsorship.validationFormat;
+  };
   const sponsorship =
     sponsorshipOffered && sponsorDomain
       ? {
           domain: sponsorDomain,
-          error: sponsorError
-            ? sponsorError.messageKey === ("domain" as string)
-              ? format(messages.sponsorship.validationDomain, { domain: sponsorDomain })
-              : messages.sponsorship.validationFormat
-            : null,
+          error: sponsorError ? sponsorErrorText(sponsorError.messageKey as string) : null,
           value:
             typeof params.v_sponsorEmail === "string"
               ? params.v_sponsorEmail.slice(0, 254)
@@ -131,7 +135,7 @@ export default async function ConsentPage({
       : null;
 
   const fields: RenderedField[] = fieldsForConsentRender(
-    configuredGuestFields(),
+    await effectiveGuestFields(),
     sponsorshipOffered
   ).map((field) => {
     const error = errorsByField.get(field.id) ?? null;

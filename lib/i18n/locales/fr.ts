@@ -85,6 +85,7 @@ export const fr: Messages = {
     note: "Vous serez en ligne dès que votre parrain aura approuvé.",
     validationFormat: "Saisissez une adresse e-mail de parrain valide.",
     validationDomain: "L'adresse e-mail de votre parrain doit se terminer par @{domain}.",
+    validationNotAllowed: "Cette adresse e-mail ne peut pas approuver l'accès invité. Vérifiez auprès de votre hôte.",
     pendingTitle: "En attente de votre parrain",
     pendingBody: "Nous avons demandé à {sponsor} d'approuver votre accès. Cette page se met à jour automatiquement.",
     pendingHint: "Gardez cette page ouverte. La demande expire {minutes} minutes après son envoi.",

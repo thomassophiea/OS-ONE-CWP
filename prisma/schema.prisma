@@ -338,6 +338,42 @@ model SponsorshipRequest {
   @@index([status, expiresAt])
 }
 
+/// Operator-managed portal configuration — the storage behind AURA's
+/// "Cloud Captive Portal" configuration page.
+///
+/// One row (`id = "default"`). Every column is nullable on purpose: null means
+/// "not managed here — fall back to the environment variable", so a deployment
+/// with no row (or no value) behaves exactly as it did when env vars were the
+/// only source. The environment stays the bootstrap and the floor; this row is
+/// the operator overlay on top of it. Nothing here is a secret and nothing
+/// here is personal data.
+model PortalConfig {
+  id String @id @default("default")
+
+  // ---- employee sponsorship ----
+  /// Master switch. Null = enabled whenever domains + email transport exist;
+  /// false = force off even when configured; true = same as null (the
+  /// transport requirement can never be overridden from here).
+  sponsorshipEnabled Boolean?
+  /// Comma-separated sponsor domains, overriding SPONSOR_ALLOWED_DOMAINS.
+  sponsorAllowedDomains String?
+  /// Optional comma-separated allowlist of exact sponsor addresses. Empty or
+  /// null means any mailbox at an allowed domain may sponsor.
+  sponsorAllowedAddresses String?
+  sponsorshipTtlSeconds    Int?
+  sponsorshipMaxPerSession Int?
+
+  // ---- guest fields ----
+  /// Comma-separated registry ids, overriding GUEST_FIELDS_ENABLED.
+  guestFieldsEnabled  String?
+  guestFieldsRequired String?
+
+  /// Who last wrote this, from the caller's X-Actor header. Audit only.
+  updatedBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 model AuditEvent {
   id        String        @id @default(cuid())
   sessionId String?

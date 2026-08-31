@@ -31,7 +31,7 @@ const DNS_LABEL_RE = /^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/;
 
 export type SponsorEmailVerdict =
   | { ok: true; email: string; domain: string }
-  | { ok: false; reason: "format" | "domain" };
+  | { ok: false; reason: "format" | "domain" | "notAllowed" };
 
 /** True when every code point is printable ASCII. */
 function isPrintableAscii(value: string): boolean {
@@ -42,7 +42,13 @@ function isPrintableAscii(value: string): boolean {
   return true;
 }
 
-function isValidDomain(domain: string): boolean {
+/**
+ * Structural validity of a domain someone proposes to *configure* as an
+ * allowed sponsor domain — exported for the internal config API, so what the
+ * operator can save is exactly what a submitted address can match.
+ */
+export function isAcceptableSponsorDomain(domain: string): boolean {
+  if (!isPrintableAscii(domain)) return false;
   if (domain.length < 3 || domain.length > 253) return false;
   const labels = domain.split(".");
   if (labels.length < 2) return false;
@@ -58,7 +64,12 @@ function isValidDomain(domain: string): boolean {
  */
 export function validateSponsorEmail(
   raw: string | null | undefined,
-  allowedDomains: readonly string[]
+  allowedDomains: readonly string[],
+  /**
+   * Optional exact-address allowlist (lowercase). Empty means any mailbox at
+   * an allowed domain; non-empty narrows sponsorship to exactly these people.
+   */
+  allowedAddresses: readonly string[] = []
 ): SponsorEmailVerdict {
   const value = (raw ?? "").trim();
 
@@ -78,11 +89,19 @@ export function validateSponsorEmail(
   if (!LOCAL_PART_RE.test(localPart)) return { ok: false, reason: "format" };
   if (localPart.startsWith(".") || localPart.endsWith(".") || localPart.includes(".."))
     return { ok: false, reason: "format" };
-  if (!isValidDomain(domain)) return { ok: false, reason: "format" };
+  if (!isAcceptableSponsorDomain(domain)) return { ok: false, reason: "format" };
 
   // Exact match only. `endsWith` would admit `evil-extremenetworks.com`;
   // matching before the last `@` is what stops `a@extremenetworks.com@evil.org`.
   if (!allowedDomains.includes(domain)) return { ok: false, reason: "domain" };
 
-  return { ok: true, email: `${localPart}@${domain}`, domain };
+  const email = `${localPart}@${domain}`;
+  // Address allowlists compare case-insensitively: RFC 5321 makes local-part
+  // case significant in theory, but no corporate directory does, and a policy
+  // a sponsor can dodge by re-casing their own name is not a policy.
+  if (allowedAddresses.length > 0 && !allowedAddresses.includes(email.toLowerCase())) {
+    return { ok: false, reason: "notAllowed" };
+  }
+
+  return { ok: true, email, domain };
 }

@@ -91,4 +91,24 @@ describe("validateSponsorEmail", () => {
     expect(validateSponsorEmail("a@partner.example", domains).ok).toBe(true);
     expect(validateSponsorEmail("a@sub.partner.example", domains).ok).toBe(false);
   });
+
+  it("narrows to an exact-address allowlist when one is configured", () => {
+    const allowed = ["tsophiea@extremenetworks.com"];
+    expect(validateSponsorEmail("tsophiea@extremenetworks.com", DOMAINS, allowed).ok).toBe(true);
+    // Case-insensitive on the whole address: a directory is not case-sensitive.
+    expect(validateSponsorEmail("TSophiea@ExtremeNetworks.com", DOMAINS, allowed).ok).toBe(true);
+    expect(validateSponsorEmail("other@extremenetworks.com", DOMAINS, allowed)).toEqual({
+      ok: false,
+      reason: "notAllowed",
+    });
+    // Domain check still comes first: a wrong domain is never "notAllowed".
+    expect(validateSponsorEmail("tsophiea@gmail.com", DOMAINS, allowed)).toEqual({
+      ok: false,
+      reason: "domain",
+    });
+  });
+
+  it("an empty allowlist means any mailbox at an allowed domain", () => {
+    expect(validateSponsorEmail("anyone@extremenetworks.com", DOMAINS, []).ok).toBe(true);
+  });
 });

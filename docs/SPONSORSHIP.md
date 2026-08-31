@@ -113,10 +113,34 @@ visit.
 | `EMAIL_FROM` | From header | `guest-portal@localhost` |
 | `SMTP_URL` or `SMTP_HOST`/`SMTP_PORT`/`SMTP_SECURE`/`SMTP_USER`/`SMTP_PASSWORD` | relay | unset |
 
-Multi-domain support already works (`SPONSOR_ALLOWED_DOMAINS=a.com,b.com`);
-per-tenant policy, sponsor allowlists, Entra ID validation, and richer
-notification channels are Phase 2 and slot in behind `sponsorEmailPolicy` and
-the transport seam without schema changes.
+Every value above is the *environment* layer. An operator overlay lives in the
+`PortalConfig` row (one row, every column nullable — null falls through to the
+env), managed from AURA's **Configure → Cloud Captive Portal** page via
+`GET/PUT /api/internal/config` (same `INTERNAL_API_TOKEN` trust model as
+`/api/internal/guests`; values validated server-side here). The overlay covers
+the sponsorship switch, domains, an optional exact-address sponsor allowlist,
+TTL, the per-session cap, and the guest-field selection. The email transport is
+deliberately not in it — transports name credentials, and credentials stay in
+the environment. Reads go through a 15-second in-process cache and every
+failure degrades to the env values, so configuration can never take the guest
+flow down.
+
+## Cross-session continuity
+
+The captive-assistant window closing mid-wait is routine. On every verified
+redirect the portal looks for this MAC's latest request that is still PENDING
+(inside its decision window) or APPROVED and still *redeemable* (within one TTL
+of `approvedAt` — approval and redemption run on different clocks, so a
+last-minute approval is not stillborn). Such a request is re-bound to the new
+session (`SPONSORSHIP_RESUMED` audit event), the new session's CSRF is burnt so
+the form cannot be re-submitted on top of it, and the guest lands back on the
+waiting page — the approval URL is then built from the *new* session's gateway
+token, which is what makes a resumed approval redeemable at all. Terminal or
+stale requests fall through to the ordinary consent form.
+
+Remaining Phase-2 candidates: Entra ID / Workspace sponsor identity, per-WLAN
+policy, and richer notification channels — all behind `sponsorEmailPolicy` and
+the transport seam, no schema changes required.
 
 ## Audit trail
 

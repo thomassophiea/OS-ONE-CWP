@@ -85,6 +85,7 @@ export const de: Messages = {
     note: "Sie sind online, sobald Ihr Sponsor zustimmt.",
     validationFormat: "Geben Sie eine gültige Sponsor-E-Mail-Adresse ein.",
     validationDomain: "Die E-Mail-Adresse Ihres Sponsors muss auf @{domain} enden.",
+    validationNotAllowed: "Diese E-Mail-Adresse kann keinen Gastzugang freigeben. Fragen Sie Ihren Gastgeber.",
     pendingTitle: "Warten auf Ihren Sponsor",
     pendingBody: "Wir haben {sponsor} gebeten, Ihren Zugang freizugeben. Diese Seite aktualisiert sich automatisch.",
     pendingHint: "Lassen Sie diese Seite geöffnet. Die Anfrage läuft {minutes} Minuten nach dem Senden ab.",

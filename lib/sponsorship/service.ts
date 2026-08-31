@@ -5,15 +5,14 @@ import { audit } from "@/lib/session/repository";
 import {
   appBaseUrl,
   approvalUrlTtlSeconds,
-  sponsorshipMaxPerSession,
-  sponsorshipTtlSeconds,
   xccIdentity,
   xccSharedSecret,
 } from "@/lib/env";
+import { effectiveSponsorship } from "@/lib/config/portal";
 import { buildEcpApprovalUrl } from "@/lib/captive/ecpSigV4";
 import type { PersistencePolicy } from "@/lib/privacy/policy";
 import { newSponsorshipToken, hashSponsorshipToken, isWellFormedToken } from "./token";
-import { effectiveStatus } from "./state";
+import { approvalRedeemable, effectiveStatus } from "./state";
 
 /**
  * Sponsorship persistence and the one place a sponsor's decision becomes real.
@@ -62,13 +61,14 @@ export async function latestSponsorshipForSession(
 export async function createSponsorshipRequest(
   input: CreateSponsorshipInput
 ): Promise<CreateSponsorshipResult> {
+  const config = await effectiveSponsorship();
   const now = new Date();
-  const expiresAt = new Date(now.getTime() + sponsorshipTtlSeconds() * 1000);
+  const expiresAt = new Date(now.getTime() + config.ttlSeconds * 1000);
 
   const priorCount = await prisma.sponsorshipRequest.count({
     where: { sessionId: input.session.id },
   });
-  if (priorCount >= sponsorshipMaxPerSession()) {
+  if (priorCount >= config.maxPerSession) {
     await audit(input.session.id, "SPONSORSHIP_LIMIT_REACHED", "warn", {
       clientMac: input.session.clientMac,
       priorCount,
@@ -101,6 +101,51 @@ export async function createSponsorshipRequest(
     log.error("sponsorship_create_failed", { err, sessionId: input.session.id });
     return { ok: false, reason: "unavailable" };
   }
+}
+
+/**
+ * A request this device could resume in a *new* session: still PENDING inside
+ * its decision window, or APPROVED and still redeemable. Cross-session
+ * continuity — the captive assistant window closing mid-wait is routine, and
+ * the guest who reconnects should land back where they were, not be made to
+ * ask their sponsor twice. Anything terminal (or stale) returns null and the
+ * guest simply gets the ordinary consent form.
+ */
+export async function resumableSponsorshipForMac(
+  clientMac: string
+): Promise<SponsorshipRequest | null> {
+  const config = await effectiveSponsorship();
+  const now = new Date();
+  const latest = await prisma.sponsorshipRequest.findFirst({
+    where: { clientMac },
+    orderBy: { createdAt: "desc" },
+  });
+  if (!latest) return null;
+  if (effectiveStatus(latest, now) === "PENDING") return latest;
+  if (approvalRedeemable(latest, config.ttlSeconds, now)) return latest;
+  return null;
+}
+
+/**
+ * Attach a resumed request to the guest's new session, so the waiting page and
+ * the status endpoint — both strictly session-bound — serve it there. The
+ * approval URL will be built from the *new* session's gateway token, which is
+ * exactly what makes a resumed approval redeemable at all.
+ */
+export async function rebindSponsorshipToSession(
+  request: SponsorshipRequest,
+  sessionId: string
+): Promise<void> {
+  await prisma.sponsorshipRequest.update({
+    where: { id: request.id },
+    data: { sessionId },
+  });
+  await audit(sessionId, "SPONSORSHIP_RESUMED", "info", {
+    requestId: request.id,
+    clientMac: request.clientMac,
+    requestStatus: request.status,
+    previousSessionId: request.sessionId,
+  });
 }
 
 /** The absolute review URL the sponsor receives. */

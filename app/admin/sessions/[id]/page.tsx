@@ -18,7 +18,10 @@ export default async function SessionDetailPage({
 
   const session = await prisma.guestSession.findUnique({
     where: { id },
-    include: { auditEvents: { orderBy: { createdAt: "asc" } } },
+    include: {
+      auditEvents: { orderBy: { createdAt: "asc" } },
+      sponsorships: { orderBy: { createdAt: "desc" } },
+    },
   });
   if (!session) notFound();
 
@@ -75,6 +78,49 @@ export default async function SessionDetailPage({
               </div>
             ))}
         </section>
+
+        {session.sponsorships.length > 0 && (
+          <>
+            <h2 className="text-lg font-semibold text-slate-900 mb-3">
+              Sponsorship requests ({session.sponsorships.length})
+            </h2>
+            <section className="mb-8 space-y-4">
+              {session.sponsorships.map((r) => (
+                <div
+                  key={r.id}
+                  className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100"
+                >
+                  {(
+                    [
+                      ["Status", r.status],
+                      ["Sponsor", r.sponsorEmail],
+                      ["Guest name", r.guestName],
+                      ["Guest email", r.guestEmail],
+                      ["Requested", r.createdAt.toISOString()],
+                      ["Email sent", r.emailSentAt?.toISOString() ?? null],
+                      ["Review page first opened", r.viewedAt?.toISOString() ?? null],
+                      ["Decided", r.decidedAt?.toISOString() ?? null],
+                      ["Decision source IP", r.decisionIp],
+                      ["Expires", r.expiresAt.toISOString()],
+                      [
+                        "Authorization released",
+                        r.authorizationIssuedAt?.toISOString() ?? null,
+                      ],
+                      ["Status polls", String(r.checkCount)],
+                    ] as [string, string | null][]
+                  )
+                    .filter(([, v]) => v)
+                    .map(([label, value]) => (
+                      <div key={label} className="flex gap-4 px-4 py-2 text-sm">
+                        <span className="w-56 shrink-0 text-slate-500">{label}</span>
+                        <span className="text-slate-900 break-all">{value}</span>
+                      </div>
+                    ))}
+                </div>
+              ))}
+            </section>
+          </>
+        )}
 
         <h2 className="text-lg font-semibold text-slate-900 mb-3">
           Audit trail ({session.auditEvents.length})

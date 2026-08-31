@@ -78,6 +78,11 @@ Off unless `SPONSOR_ALLOWED_DOMAINS` is set **and** an email transport is
 usable; absent either, the consent form has no sponsorship option and the open
 path is untouched. See [SPONSORSHIP.md](SPONSORSHIP.md).
 
+The variables below are the fallback layer: an operator overlay (`PortalConfig`
+row, managed from AURA's Configure → Cloud Captive Portal page through
+`/api/internal/config`, gated by `INTERNAL_API_TOKEN`) overrides them per
+value; null in the overlay always means "use the variable".
+
 | Variable | Value |
 |---|---|
 | `SPONSOR_ALLOWED_DOMAINS` | `extremenetworks.com` |

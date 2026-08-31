@@ -26,10 +26,9 @@ import {
   consentChallengeMatches,
 } from "@/lib/session/cookie";
 import { audit, isExpired } from "@/lib/session/repository";
-import { configuredGuestFields } from "@/lib/guestFields/registry";
 import { validateGuestFields } from "@/lib/guestFields/validate";
-import { auditablePolicy, policyFromConsent, type PersistencePolicy } from "@/lib/privacy/policy";
-import { sponsorAllowedDomains, sponsorshipConfigured } from "@/lib/env";
+import { auditablePolicy, policyFromConsent } from "@/lib/privacy/policy";
+import { effectiveGuestFields, effectiveSponsorship } from "@/lib/config/portal";
 import { validateSponsorEmail } from "@/lib/sponsorship/sponsorEmailPolicy";
 import { sponsorshipGuestFields } from "@/lib/sponsorship/fields";
 import {
@@ -101,6 +100,8 @@ export async function POST(request: NextRequest) {
   // records is what every later component reads.
   let doNotStore = false;
   const rawFields: Record<string, string | undefined> = {};
+  // Operator-managed field selection, with the environment as fallback.
+  const baseFields = await effectiveGuestFields();
   try {
     const form = await request.formData();
     submittedCsrf = form.get("csrfToken")?.toString() ?? null;
@@ -116,9 +117,7 @@ export async function POST(request: NextRequest) {
     // widened with the identity fields when the guest chose sponsorship. An
     // extra input a client invents is never looked at, so it cannot become a
     // stored value.
-    const readable = sponsorRequested
-      ? sponsorshipGuestFields(configuredGuestFields())
-      : configuredGuestFields();
+    const readable = sponsorRequested ? sponsorshipGuestFields(baseFields) : baseFields;
     for (const field of readable) {
       rawFields[field.id] = form.get(field.id)?.toString();
     }
@@ -221,9 +220,7 @@ export async function POST(request: NextRequest) {
   // The sponsor path validates a stricter set: a sponsor is vouching for a
   // person, so name and email are mandatory there no matter what the
   // deployment collects on the open path.
-  const configured = sponsorRequested
-    ? sponsorshipGuestFields(configuredGuestFields())
-    : configuredGuestFields();
+  const configured = sponsorRequested ? sponsorshipGuestFields(baseFields) : baseFields;
   const validation = validateGuestFields(configured, rawFields);
   const allErrors: { fieldId: string; messageKey: string }[] = [...validation.errors];
 
@@ -231,13 +228,18 @@ export async function POST(request: NextRequest) {
   // a guest detail, it is the selector for who gets asked to grant access.
   let sponsorEmail: string | null = null;
   if (sponsorRequested) {
-    if (!sponsorshipConfigured()) {
+    const sponsorCfg = await effectiveSponsorship();
+    if (!sponsorCfg.enabled) {
       await audit(session.id, "SPONSORSHIP_NOT_CONFIGURED", "warn", {
         clientMac: session.clientMac,
       });
       return fail(base, "sponsorship_unavailable");
     }
-    const verdict = validateSponsorEmail(rawSponsorEmail, sponsorAllowedDomains());
+    const verdict = validateSponsorEmail(
+      rawSponsorEmail,
+      sponsorCfg.domains,
+      sponsorCfg.addresses
+    );
     if (verdict.ok) {
       sponsorEmail = verdict.email;
     } else {

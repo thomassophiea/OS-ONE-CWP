@@ -87,6 +87,7 @@ export const ja: Messages = {
     note: "スポンサーが承認するとすぐにインターネットに接続できます。",
     validationFormat: "有効なスポンサーのメールアドレスを入力してください。",
     validationDomain: "スポンサーのメールアドレスは @{domain} で終わる必要があります。",
+    validationNotAllowed: "このメールアドレスではゲストアクセスを承認できません。訪問先の担当者にご確認ください。",
     pendingTitle: "スポンサーの承認を待っています",
     pendingBody: "{sponsor} にアクセスの承認を依頼しました。このページは自動的に更新されます。",
     pendingHint: "このページを開いたままにしてください。リクエストは送信から {minutes} 分で期限切れになります。",

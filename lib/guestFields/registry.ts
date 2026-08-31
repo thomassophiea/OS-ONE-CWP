@@ -129,13 +129,26 @@ function parseList(value: string | undefined): string[] {
 export function configuredGuestFields(
   env: Record<string, string | undefined> = process.env
 ): ConfiguredGuestField[] {
-  const enabled = parseList(env.GUEST_FIELDS_ENABLED);
-  const required = new Set(parseList(env.GUEST_FIELDS_REQUIRED));
+  return guestFieldsFromLists(
+    parseList(env.GUEST_FIELDS_ENABLED),
+    parseList(env.GUEST_FIELDS_REQUIRED)
+  );
+}
 
+/**
+ * Resolve explicit id lists against the catalogue — the shared core of the
+ * env-derived selection above and the operator-managed `PortalConfig` overlay.
+ * Unknown ids are dropped, and "required" still never implies "enabled".
+ */
+export function guestFieldsFromLists(
+  enabled: readonly string[],
+  required: readonly string[]
+): ConfiguredGuestField[] {
+  const requiredSet = new Set(required);
   return enabled
     .map((id) => BY_ID.get(id))
     .filter((f): f is GuestFieldDefinition => Boolean(f))
-    .map((f) => ({ ...f, required: required.has(f.id) }));
+    .map((f) => ({ ...f, required: requiredSet.has(f.id) }));
 }
 
 /** True when this deployment collects anything from the guest at all. */

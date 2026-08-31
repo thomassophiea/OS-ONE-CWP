@@ -114,6 +114,7 @@ export const en = {
     note: "You'll get online as soon as your sponsor approves.",
     validationFormat: "Enter a valid sponsor email address.",
     validationDomain: "Your sponsor's email address must end in @{domain}.",
+    validationNotAllowed: "This email address can't approve guest access. Check with your host.",
     pendingTitle: "Waiting for your sponsor",
     pendingBody: "We've asked {sponsor} to approve your access. This page updates automatically.",
     pendingHint: "Keep this page open. The request expires {minutes} minutes after it was sent.",

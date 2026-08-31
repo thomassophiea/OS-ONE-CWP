@@ -88,6 +88,7 @@ export const zhHans: Messages = {
     note: "担保人批准后您即可上网。",
     validationFormat: "请输入有效的担保人邮箱地址。",
     validationDomain: "担保人的邮箱地址必须以 @{domain} 结尾。",
+    validationNotAllowed: "该邮箱地址无法批准访客接入。请与您的接待人确认。",
     pendingTitle: "正在等待担保人",
     pendingBody: "我们已请 {sponsor} 批准您的接入。本页面会自动更新。",
     pendingHint: "请保持本页面打开。申请在发送 {minutes} 分钟后过期。",

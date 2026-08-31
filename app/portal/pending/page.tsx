@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { log } from "@/lib/log";
 import { SESSION_COOKIE, readSessionCookie } from "@/lib/session/cookie";
 import { isExpired } from "@/lib/session/repository";
-import { sponsorshipTtlSeconds } from "@/lib/env";
+import { effectiveSponsorship } from "@/lib/config/portal";
 import { effectiveStatus } from "@/lib/sponsorship/state";
 import { latestSponsorshipForSession } from "@/lib/sponsorship/service";
 import { requestLocale } from "@/lib/i18n/server";
@@ -68,7 +68,7 @@ export default async function PendingPage() {
         <PendingStatus
           initialState={initialState}
           sponsorEmail={sponsorship.sponsorEmail}
-          ttlMinutes={Math.max(1, Math.round(sponsorshipTtlSeconds() / 60))}
+          ttlMinutes={Math.max(1, Math.round((await effectiveSponsorship()).ttlSeconds / 60))}
           messages={{ common: messages.common, sponsorship: messages.sponsorship }}
           networkLabel={messages.consent.networkLabel}
           ssid={session.ssid}

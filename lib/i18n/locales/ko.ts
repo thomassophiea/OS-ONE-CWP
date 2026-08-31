@@ -84,6 +84,7 @@ export const ko: Messages = {
     note: "스폰서가 승인하는 즉시 인터넷을 사용할 수 있습니다.",
     validationFormat: "유효한 스폰서 이메일 주소를 입력해 주십시오.",
     validationDomain: "스폰서의 이메일 주소는 @{domain}(으)로 끝나야 합니다.",
+    validationNotAllowed: "이 이메일 주소로는 게스트 접속을 승인할 수 없습니다. 방문 대상 직원에게 확인해 주십시오.",
     pendingTitle: "스폰서의 승인을 기다리는 중",
     pendingBody: "{sponsor} 님에게 접속 승인을 요청했습니다. 이 페이지는 자동으로 갱신됩니다.",
     pendingHint: "이 페이지를 열어 두십시오. 요청은 전송 후 {minutes}분이 지나면 만료됩니다.",

@@ -85,6 +85,7 @@ export const pt: Messages = {
     note: "Ficará online assim que o seu patrocinador aprovar.",
     validationFormat: "Introduza um e-mail de patrocinador válido.",
     validationDomain: "O e-mail do seu patrocinador tem de terminar em @{domain}.",
+    validationNotAllowed: "Este endereço de e-mail não pode aprovar o acesso de visitantes. Confirme com o seu anfitrião.",
     pendingTitle: "A aguardar o seu patrocinador",
     pendingBody: "Pedimos a {sponsor} que aprove o seu acesso. Esta página atualiza-se automaticamente.",
     pendingHint: "Mantenha esta página aberta. O pedido expira {minutes} minutos depois de ser enviado.",

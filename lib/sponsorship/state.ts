@@ -42,3 +42,26 @@ export function isDecidable(request: ExpirableRequest, now: Date = new Date()): 
 export function isTerminal(status: SponsorshipStatus): boolean {
   return status !== "PENDING";
 }
+
+/**
+ * Whether an APPROVED request may still be redeemed for network access.
+ *
+ * Approval and redemption have different clocks: `expiresAt` bounds how long
+ * the *sponsor* had to decide, and this bounds how long the *guest* has to
+ * come back and collect — measured from the decision, so an approval in the
+ * last minute of the decision window is not stillborn. Used by cross-session
+ * continuity: a guest whose captive window closed mid-wait reconnects, gets a
+ * fresh session and a fresh gateway token, and the standing approval is
+ * honoured instead of making them ask their sponsor twice.
+ */
+export function approvalRedeemable(
+  request: { status: SponsorshipStatus; approvedAt: Date | null },
+  redemptionSeconds: number,
+  now: Date = new Date()
+): boolean {
+  return (
+    request.status === "APPROVED" &&
+    request.approvedAt !== null &&
+    request.approvedAt.getTime() + redemptionSeconds * 1000 > now.getTime()
+  );
+}
