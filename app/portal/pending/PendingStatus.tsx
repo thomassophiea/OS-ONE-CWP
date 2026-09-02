@@ -134,7 +134,7 @@ export default function PendingStatus({
 
   if (state === "pending") {
     return (
-      <div className="mt-4 text-center">
+      <div className="mt-4 text-center" role="status" aria-live="polite">
         <div className="mb-4 flex justify-center" aria-hidden="true">
           <span className="h-12 w-12 animate-spin rounded-full border-4 border-slate-200 border-t-blue-600" />
         </div>
@@ -150,7 +150,7 @@ export default function PendingStatus({
             </div>
           </dl>
         )}
-        <p className="text-xs text-slate-400">
+        <p className="text-xs text-slate-600">
           {format(s.pendingHint, { minutes: ttlMinutes })}
         </p>
       </div>
@@ -200,7 +200,11 @@ function StatusCard({
   body: string;
 }) {
   return (
-    <div className="mt-4 text-center">
+    // A terminal state replacing the pending spinner is exactly what WCAG
+    // 4.1.3 (Status Messages) is about — a guest listening with a screen
+    // reader has no other way to learn "approved" or "denied" happened
+    // without re-reading the page from the top.
+    <div className="mt-4 text-center" role="status" aria-live="polite">
       <div
         className={`mb-4 ${tone === "ok" ? "text-emerald-500" : "text-amber-500"}`}
         aria-hidden="true"

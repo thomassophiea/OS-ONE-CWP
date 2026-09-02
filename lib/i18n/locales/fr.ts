@@ -102,6 +102,14 @@ export const fr: Messages = {
     statusError: "Impossible de vérifier l'état de votre demande. Rechargez cette page pour réessayer.",
   },
 
+  sessionTiming: {
+    warning: "Votre session va bientôt expirer. Sélectionnez « Prolonger la session » pour rester connecté.",
+    extend: "Prolonger la session",
+    extending: "Prolongation…",
+    extended: "Session prolongée. Il vous reste {minutes} minutes.",
+    extendFailed: "Impossible de prolonger votre session. Veuillez terminer rapidement.",
+  },
+
   success: {
     title: "Vous êtes connecté",
     forwarding: "Retour à votre page précédente…",

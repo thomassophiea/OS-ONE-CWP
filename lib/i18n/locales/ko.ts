@@ -99,6 +99,14 @@ export const ko: Messages = {
     statusError: "요청 상태를 확인할 수 없습니다. 이 페이지를 새로 고침하여 다시 시도해 주십시오.",
   },
 
+  sessionTiming: {
+    warning: "세션이 곧 만료됩니다. 연결을 유지하려면 [세션 연장]을 선택하십시오.",
+    extend: "세션 연장",
+    extending: "연장 중…",
+    extended: "세션이 연장되었습니다. {minutes}분 더 이용할 수 있습니다.",
+    extendFailed: "세션을 연장할 수 없습니다. 서둘러 완료해 주십시오.",
+  },
+
   success: {
     title: "연결되었습니다",
     forwarding: "이전 페이지로 돌아가는 중…",

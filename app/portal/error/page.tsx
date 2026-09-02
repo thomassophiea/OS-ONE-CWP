@@ -1,8 +1,21 @@
+import type { Metadata } from "next";
 import { requestLocale } from "@/lib/i18n/server";
 import LanguagePicker from "@/app/LanguagePicker";
 import type { Messages } from "@/lib/i18n";
 
 export const dynamic = "force-dynamic";
+
+export async function generateMetadata({
+  searchParams,
+}: {
+  searchParams: Promise<{ code?: string }>;
+}): Promise<Metadata> {
+  const { code } = await searchParams;
+  const { messages } = await requestLocale();
+  const key = (code ?? "") as keyof Messages["errors"];
+  const message = messages.errors[key] ?? messages.errors.bad_request;
+  return { title: message.title };
+}
 
 /**
  * Deliberately generic, operator-friendly errors. The specific failure reason
@@ -49,7 +62,7 @@ export default async function PortalErrorPage({
           <p className="text-sm text-slate-500">{message.body}</p>
           {/* The code stays untranslated: it is what an operator is told to read
               back, and a localised one would not match the logs. */}
-          <p className="mt-8 text-xs text-slate-400">
+          <p className="mt-8 text-xs text-slate-600">
             {messages.common.portalName}
             {code ? ` · ${code}` : ""}
           </p>

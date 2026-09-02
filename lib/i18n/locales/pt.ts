@@ -102,6 +102,14 @@ export const pt: Messages = {
     statusError: "Não foi possível verificar o estado do seu pedido. Recarregue esta página para tentar novamente.",
   },
 
+  sessionTiming: {
+    warning: "A sua sessão vai expirar em breve. Selecione \"Prolongar sessão\" para continuar ligado.",
+    extend: "Prolongar sessão",
+    extending: "A prolongar…",
+    extended: "Sessão prolongada. Tem mais {minutes} minutos.",
+    extendFailed: "Não foi possível prolongar a sua sessão. Termine em breve, por favor.",
+  },
+
   success: {
     title: "Está ligado",
     forwarding: "A levá-lo de volta ao ponto onde estava…",

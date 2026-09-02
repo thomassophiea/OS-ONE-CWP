@@ -22,5 +22,8 @@ export default function PortalFooter({
       </p>
     );
   }
-  return <p className={`${className} text-slate-400`}>{portalName}</p>;
+  // slate-400 on white/slate-50 measures ~2.5:1 — well under the 4.5:1 AA
+  // text floor (WCAG 1.4.3). slate-600 (~7.2–7.6:1) keeps the same muted,
+  // secondary look with real margin.
+  return <p className={`${className} text-slate-600`}>{portalName}</p>;
 }

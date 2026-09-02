@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
@@ -25,10 +26,16 @@ import { fieldsForConsentRender } from "@/lib/sponsorship/fields";
 import { latestSponsorshipForSession } from "@/lib/sponsorship/service";
 import { format, type Messages } from "@/lib/i18n";
 import LanguagePicker from "@/app/LanguagePicker";
+import SessionExpiryWarning from "@/app/portal/SessionExpiryWarning";
 import ConsentForm, { type RenderedField } from "./ConsentForm";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+export async function generateMetadata(): Promise<Metadata> {
+  const { messages } = await requestLocale();
+  return { title: messages.consent.title };
+}
 
 /**
  * The consent page.
@@ -179,6 +186,13 @@ export default async function ConsentPage({
       <div className="bg-white rounded-2xl shadow-md w-full max-w-md p-8">
         <LanguagePicker current={locale} label={messages.common.languageLabel} locales={offered} />
 
+        {session.expiresAt && (
+          <SessionExpiryWarning
+            expiresAt={session.expiresAt.toISOString()}
+            messages={messages.sessionTiming}
+          />
+        )}
+
         <header className="mb-6 mt-4" style={{ textAlign: branding.alignment }}>
           <h1 className="text-2xl font-bold text-slate-900">{messages.consent.title}</h1>
           <p className="mt-2 text-sm text-slate-500">{messages.consent.subtitle}</p>
@@ -231,7 +245,7 @@ export default async function ConsentPage({
         {/* Footer: null keeps the pre-existing portal-name line; true is the
             branded line; false removes the footer entirely. */}
         {branding.footer === null && (
-          <p className="mt-6 text-center text-xs text-slate-400">{messages.common.portalName}</p>
+          <p className="mt-6 text-center text-xs text-slate-600">{messages.common.portalName}</p>
         )}
         {branding.footer === true && (
           <p className="mt-6 text-center text-xs" style={{ color: branding.color }}>

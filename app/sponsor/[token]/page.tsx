@@ -77,7 +77,7 @@ export default async function SponsorReviewPage({
         </p>
         <Details request={request} guestLine={guestLine} />
         {request.decidedAt && (
-          <p className="mt-4 text-xs text-slate-400">
+          <p className="mt-4 text-xs text-slate-600">
             Decided {request.decidedAt.toISOString().replace("T", " ").replace(/\.\d+Z$/, " UTC")}
           </p>
         )}
@@ -132,7 +132,7 @@ export default async function SponsorReviewPage({
               </option>
             ))}
           </select>
-          <p className="text-[11px] text-slate-400">
+          <p className="text-[11px] text-slate-600">
             How long this device stays authorized on the guest network.
           </p>
         </div>
@@ -165,7 +165,7 @@ export default async function SponsorReviewPage({
         </div>
       </form>
 
-      <p className="mt-4 text-xs text-slate-400 text-center">
+      <p className="mt-4 text-xs text-slate-600 text-center">
         Expires {request.expiresAt.toISOString().replace("T", " ").replace(/\.\d+Z$/, " UTC")}.
         If you don&apos;t recognise this visitor, deny the request or close this page.
       </p>
@@ -178,7 +178,7 @@ function Shell({ children }: { children: React.ReactNode }) {
     <main className="min-h-screen bg-slate-50 flex items-center justify-center p-4" lang="en">
       <div className="bg-white rounded-2xl shadow-md w-full max-w-md p-8">
         {children}
-        <p className="mt-8 text-center text-xs text-slate-400">OS-ONE-CWP · Sponsor review</p>
+        <p className="mt-8 text-center text-xs text-slate-600">OS-ONE-CWP · Sponsor review</p>
       </div>
     </main>
   );

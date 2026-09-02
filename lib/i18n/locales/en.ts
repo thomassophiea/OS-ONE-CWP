@@ -131,6 +131,14 @@ export const en = {
     statusError: "We couldn't check the status of your request. Reload this page to try again.",
   },
 
+  sessionTiming: {
+    warning: "Your session will expire soon. Select Extend session to stay connected.",
+    extend: "Extend session",
+    extending: "Extending…",
+    extended: "Session extended. You have {minutes} more minutes.",
+    extendFailed: "We couldn't extend your session. Please finish soon.",
+  },
+
   success: {
     title: "You're connected",
     forwarding: "Taking you back to where you left off…",

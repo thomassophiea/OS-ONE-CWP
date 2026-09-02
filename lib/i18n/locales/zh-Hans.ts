@@ -103,6 +103,14 @@ export const zhHans: Messages = {
     statusError: "无法查询申请状态。请重新加载本页面重试。",
   },
 
+  sessionTiming: {
+    warning: "您的登录会话即将过期。选择\"延长会话\"以保持连接。",
+    extend: "延长会话",
+    extending: "正在延长…",
+    extended: "会话已延长。您还可以使用{minutes}分钟。",
+    extendFailed: "无法延长会话,请尽快完成操作。",
+  },
+
   success: {
     title: "已连接",
     forwarding: "正在返回您之前的页面…",

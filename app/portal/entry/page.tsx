@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
@@ -11,6 +12,11 @@ import PortalFooter from "@/app/PortalFooter";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+export async function generateMetadata(): Promise<Metadata> {
+  const { messages } = await requestLocale();
+  return { title: messages.entry.title };
+}
 
 /**
  * Where `user-portal-url` points.
