@@ -141,7 +141,7 @@ export default function ConsentForm({
                   className="flex items-baseline gap-2 text-xs font-medium text-slate-700"
                 >
                   <span>{field.label}</span>
-                  <span className="text-[11px] font-normal text-slate-400">
+                  <span className="text-[11px] font-normal text-slate-600">
                     {field.required ? messages.common.required : messages.common.optional}
                   </span>
                 </label>
@@ -280,7 +280,7 @@ export default function ConsentForm({
       )}
 
       {!ready && (
-        <p className="mt-3 text-center text-xs text-slate-400">
+        <p className="mt-3 text-center text-xs text-slate-600">
           {messages.consent.tickToContinue}
         </p>
       )}
@@ -289,7 +289,7 @@ export default function ConsentForm({
         <>
           <div className="my-6 flex items-center gap-3" aria-hidden="true">
             <span className="h-px flex-1 bg-slate-200" />
-            <span className="text-xs uppercase tracking-wide text-slate-400">
+            <span className="text-xs uppercase tracking-wide text-slate-600">
               {messages.consent.or}
             </span>
             <span className="h-px flex-1 bg-slate-200" />
@@ -322,7 +322,7 @@ export default function ConsentForm({
             >
               {messages.secureOffer.submit}
             </button>
-            <p className="mt-2 text-center text-[11px] text-slate-400">
+            <p className="mt-2 text-center text-[11px] text-slate-600">
               {format(messages.secureOffer.note)}
             </p>
           </section>
@@ -333,7 +333,7 @@ export default function ConsentForm({
         <>
           <div className="my-6 flex items-center gap-3" aria-hidden="true">
             <span className="h-px flex-1 bg-slate-200" />
-            <span className="text-xs uppercase tracking-wide text-slate-400">
+            <span className="text-xs uppercase tracking-wide text-slate-600">
               {messages.consent.or}
             </span>
             <span className="h-px flex-1 bg-slate-200" />
@@ -397,7 +397,7 @@ export default function ConsentForm({
             >
               {messages.sponsorship.submit}
             </button>
-            <p className="mt-2 text-center text-[11px] text-slate-400">
+            <p className="mt-2 text-center text-[11px] text-slate-600">
               {messages.sponsorship.note}
             </p>
           </section>

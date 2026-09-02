@@ -102,6 +102,14 @@ export const ja: Messages = {
     statusError: "リクエストの状態を確認できませんでした。このページを再読み込みしてお試しください。",
   },
 
+  sessionTiming: {
+    warning: "まもなくセッションが期限切れになります。接続を維持するには「セッションを延長」を選択してください。",
+    extend: "セッションを延長",
+    extending: "延長中…",
+    extended: "セッションを延長しました。あと{minutes}分利用できます。",
+    extendFailed: "セッションを延長できませんでした。早めに手続きを完了してください。",
+  },
+
   success: {
     title: "接続しました",
     forwarding: "元のページに戻っています…",

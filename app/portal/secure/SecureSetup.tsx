@@ -405,7 +405,7 @@ export default function SecureSetup({
       )}
 
       {joinState === "pending" && (
-        <p className="mt-5 text-center text-xs text-slate-400">
+        <p className="mt-5 text-center text-xs text-slate-600">
           {format(messages.secure.waiting, { ssid })}
         </p>
       )}
@@ -443,7 +443,7 @@ function ContinueLink({
   messages: SecureSetupMessages;
 }) {
   return (
-    <p className="mt-6 text-center text-xs text-slate-400">
+    <p className="mt-6 text-center text-xs text-slate-600">
       {destination ? (
         <a className="text-blue-600 underline break-all" href={destination}>
           {messages.secure.skip}
@@ -550,7 +550,7 @@ function SafariHandoff({
       >
         {messages.handoff.manualSetup}
       </button>
-      <p className="mt-2 text-center text-[11px] text-slate-400">
+      <p className="mt-2 text-center text-[11px] text-slate-600">
         {messages.handoff.manualWorksHere}
       </p>
     </div>

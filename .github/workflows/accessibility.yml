@@ -1,0 +1,92 @@
+name: Accessibility
+
+# First CI gate this repo has had at all — added alongside the WCAG 2.1 AA
+# fixes from the "Accessibility in Cloud-Managed Captive Portals" product
+# brief (WS-8: automated testing in the portal CI pipeline, failing the
+# build on new violations). Static lint and a runtime axe scan against a
+# real seeded session, so a regression is caught here instead of by the next
+# person auditing the deployed portal by hand.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  static:
+    name: Lint + types (jsx-a11y)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run type-check
+
+  axe:
+    name: axe-core runtime scan
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: cwp
+          POSTGRES_PASSWORD: cwp
+          POSTGRES_DB: cwp_a11y
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://cwp:cwp@localhost:5432/cwp_a11y
+      APP_BASE_URL: http://localhost:3000
+      ECP_PATH: /portal
+      XCC_IDENTITY: ci-a11y
+      XCC_SHARED_SECRET: ci-a11y-shared-secret-not-real
+      SESSION_SECRET: ci-a11y-session-secret-not-real-0123456789
+      NODE_ENV: production
+      EMAIL_TRANSPORT: console
+      PORTAL_BASE_URL: http://localhost:3000
+      # Makes `secureOnboardingConfigured()` true without a real gateway, so
+      # /portal/secure renders its degraded "setup unavailable" branch
+      # instead of bouncing to /success (`effectiveSecureAccess().enabled`
+      # is false, hence no gateway loop, whenever this is unset) — see the
+      # ERR_TOO_MANY_REDIRECTS this fixed in scripts/seed-a11y-fixtures.mjs's
+      # commit history.
+      SECURE_WLAN_SSID: CI-A11y-Secure-Net
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npx prisma migrate deploy
+      - run: npm run build
+      - name: Start portal
+        run: |
+          npm run start &
+          npx --no-install wait-on http://localhost:3000/portal/entry --timeout 60000
+      - name: Seed sessions for consent/secure pages
+        id: seed
+        run: |
+          out=$(node scripts/seed-a11y-fixtures.mjs)
+          echo "consent=$(node -e "console.log(JSON.parse(process.argv[1]).consentCookie)" "$out")" >> "$GITHUB_OUTPUT"
+          echo "secure=$(node -e "console.log(JSON.parse(process.argv[1]).secureCookie)" "$out")" >> "$GITHUB_OUTPUT"
+      - name: Run axe against the rendered portal
+        env:
+          A11Y_CONSENT_COOKIE: ${{ steps.seed.outputs.consent }}
+          A11Y_SECURE_COOKIE: ${{ steps.seed.outputs.secure }}
+        run: npm run test:a11y
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 14

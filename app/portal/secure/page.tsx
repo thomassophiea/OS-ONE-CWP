@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
@@ -15,10 +16,16 @@ import { requestLocale } from "@/lib/i18n/server";
 import { format, type Messages } from "@/lib/i18n";
 import LanguagePicker from "@/app/LanguagePicker";
 import PortalFooter from "@/app/PortalFooter";
+import SessionExpiryWarning from "@/app/portal/SessionExpiryWarning";
 import SecureSetup from "./SecureSetup";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+export async function generateMetadata(): Promise<Metadata> {
+  const { messages } = await requestLocale();
+  return { title: messages.secure.title };
+}
 
 /**
  * Secure Wi-Fi setup.
@@ -111,6 +118,13 @@ export default async function SecurePage() {
         <div className="rounded-2xl bg-white px-4 py-2 shadow-sm">
           <LanguagePicker current={locale} label={messages.common.languageLabel} locales={offered} />
         </div>
+
+        {session.expiresAt && (
+          <SessionExpiryWarning
+            expiresAt={session.expiresAt.toISOString()}
+            messages={messages.sessionTiming}
+          />
+        )}
 
         {/* Said first and said plainly: the guest is already online. Secure
             setup is optional and everything below it can be abandoned. */}

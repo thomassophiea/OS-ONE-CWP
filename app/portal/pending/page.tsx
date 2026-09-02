@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
@@ -12,10 +13,16 @@ import { latestSponsorshipForSession } from "@/lib/sponsorship/service";
 import { requestLocale } from "@/lib/i18n/server";
 import LanguagePicker from "@/app/LanguagePicker";
 import PortalFooter from "@/app/PortalFooter";
+import SessionExpiryWarning from "@/app/portal/SessionExpiryWarning";
 import PendingStatus, { type PendingInitialState } from "./PendingStatus";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+export async function generateMetadata(): Promise<Metadata> {
+  const { messages } = await requestLocale();
+  return { title: messages.sponsorship.pendingTitle };
+}
 
 /**
  * The waiting room.
@@ -68,6 +75,14 @@ export default async function PendingPage() {
     >
       <div className="bg-white rounded-2xl shadow-md w-full max-w-md p-8">
         <LanguagePicker current={locale} label={messages.common.languageLabel} locales={offered} />
+
+        {session.expiresAt &&
+          (initialState === "pending" || initialState === "approved_waiting") && (
+            <SessionExpiryWarning
+              expiresAt={session.expiresAt.toISOString()}
+              messages={messages.sessionTiming}
+            />
+          )}
 
         <PendingStatus
           initialState={initialState}

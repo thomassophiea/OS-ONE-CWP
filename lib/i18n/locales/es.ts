@@ -112,6 +112,14 @@ export const es: Messages = {
     statusError: "No pudimos comprobar el estado de tu solicitud. Recarga esta página para intentarlo de nuevo.",
   },
 
+  sessionTiming: {
+    warning: "Tu sesión caducará pronto. Selecciona «Ampliar sesión» para seguir conectado.",
+    extend: "Ampliar sesión",
+    extending: "Ampliando…",
+    extended: "Sesión ampliada. Te quedan {minutes} minutos más.",
+    extendFailed: "No pudimos ampliar tu sesión. Termina pronto, por favor.",
+  },
+
   success: {
     title: "Ya estás conectado",
     forwarding: "Volviendo a donde lo dejaste…",

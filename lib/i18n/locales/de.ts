@@ -102,6 +102,14 @@ export const de: Messages = {
     statusError: "Der Status Ihrer Anfrage konnte nicht geprüft werden. Laden Sie diese Seite neu und versuchen Sie es erneut.",
   },
 
+  sessionTiming: {
+    warning: "Ihre Sitzung läuft bald ab. Wählen Sie „Sitzung verlängern“, um verbunden zu bleiben.",
+    extend: "Sitzung verlängern",
+    extending: "Wird verlängert…",
+    extended: "Sitzung verlängert. Sie haben noch {minutes} Minuten.",
+    extendFailed: "Ihre Sitzung konnte nicht verlängert werden. Bitte schließen Sie bald ab.",
+  },
+
   success: {
     title: "Sie sind verbunden",
     forwarding: "Sie werden zurück zur vorherigen Seite gebracht…",
