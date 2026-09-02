@@ -1,8 +1,12 @@
 import type { Metadata } from "next";
 import { requestLocale } from "@/lib/i18n/server";
+import { effectiveBranding } from "@/lib/config/portal";
 import LanguagePicker from "@/app/LanguagePicker";
+import PortalLogo from "@/app/PortalLogo";
+import { portalBackgroundStyle } from "@/app/portalBackground";
 import type { Messages } from "@/lib/i18n";
 
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function generateMetadata({
@@ -29,7 +33,10 @@ export default async function PortalErrorPage({
   searchParams: Promise<{ code?: string }>;
 }) {
   const { code } = await searchParams;
-  const { locale, definition, messages, offered } = await requestLocale();
+  const [{ locale, definition, messages, offered }, branding] = await Promise.all([
+    requestLocale(),
+    effectiveBranding(),
+  ]);
 
   const key = (code ?? "") as keyof Messages["errors"];
   const message = messages.errors[key] ?? messages.errors.bad_request;
@@ -37,11 +44,13 @@ export default async function PortalErrorPage({
   return (
     <main
       className="min-h-screen bg-slate-50 flex items-center justify-center p-4"
+      style={portalBackgroundStyle(branding)}
       lang={locale}
       dir={definition.dir}
     >
       <div className="bg-white rounded-2xl shadow-md w-full max-w-md p-8">
         <LanguagePicker current={locale} label={messages.common.languageLabel} locales={offered} />
+        <PortalLogo branding={branding} alt={`${messages.common.portalName} logo`} />
         <div className="mt-4 text-center">
           <div className="mb-4 text-amber-500" aria-hidden="true">
             <svg

@@ -13,6 +13,8 @@ import { latestSponsorshipForSession } from "@/lib/sponsorship/service";
 import { requestLocale } from "@/lib/i18n/server";
 import LanguagePicker from "@/app/LanguagePicker";
 import PortalFooter from "@/app/PortalFooter";
+import PortalLogo from "@/app/PortalLogo";
+import { portalBackgroundStyle } from "@/app/portalBackground";
 import SessionExpiryWarning from "@/app/portal/SessionExpiryWarning";
 import PendingStatus, { type PendingInitialState } from "./PendingStatus";
 
@@ -70,11 +72,14 @@ export default async function PendingPage() {
   return (
     <main
       className="min-h-screen bg-slate-50 flex items-center justify-center p-4"
+      style={portalBackgroundStyle(branding)}
       lang={locale}
       dir={definition.dir}
     >
       <div className="bg-white rounded-2xl shadow-md w-full max-w-md p-8">
         <LanguagePicker current={locale} label={messages.common.languageLabel} locales={offered} />
+
+        <PortalLogo branding={branding} alt={`${messages.common.portalName} logo`} />
 
         {session.expiresAt &&
           (initialState === "pending" || initialState === "approved_waiting") && (

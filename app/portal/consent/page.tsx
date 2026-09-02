@@ -26,6 +26,8 @@ import { fieldsForConsentRender } from "@/lib/sponsorship/fields";
 import { latestSponsorshipForSession } from "@/lib/sponsorship/service";
 import { format, type Messages } from "@/lib/i18n";
 import LanguagePicker from "@/app/LanguagePicker";
+import PortalLogo from "@/app/PortalLogo";
+import { portalBackgroundStyle } from "@/app/portalBackground";
 import SessionExpiryWarning from "@/app/portal/SessionExpiryWarning";
 import ConsentForm, { type RenderedField } from "./ConsentForm";
 
@@ -180,11 +182,14 @@ export default async function ConsentPage({
   return (
     <main
       className="min-h-screen bg-slate-50 flex items-center justify-center p-4"
+      style={portalBackgroundStyle(branding)}
       lang={locale}
       dir={definition.dir}
     >
       <div className="bg-white rounded-2xl shadow-md w-full max-w-md p-8">
         <LanguagePicker current={locale} label={messages.common.languageLabel} locales={offered} />
+
+        <PortalLogo branding={branding} alt={`${messages.common.portalName} logo`} />
 
         {session.expiresAt && (
           <SessionExpiryWarning

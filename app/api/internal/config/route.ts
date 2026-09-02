@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import type { PortalConfig, Prisma } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
+import type { PortalConfigLean } from "@/lib/config/portal";
 import { prisma } from "@/lib/prisma";
 import { log } from "@/lib/log";
 import { audit } from "@/lib/session/repository";
@@ -83,7 +84,7 @@ function splitStored(value: string | null): string[] | null {
   return value.split(",").map((v) => v.trim()).filter(Boolean);
 }
 
-function storedView(row: PortalConfig | null): StoredView {
+function storedView(row: PortalConfigLean | null): StoredView {
   return {
     sponsorshipEnabled: row?.sponsorshipEnabled ?? null,
     sponsorAllowedDomains: splitStored(row?.sponsorAllowedDomains ?? null),

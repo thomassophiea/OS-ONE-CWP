@@ -16,6 +16,8 @@ import { requestLocale } from "@/lib/i18n/server";
 import { format, type Messages } from "@/lib/i18n";
 import LanguagePicker from "@/app/LanguagePicker";
 import PortalFooter from "@/app/PortalFooter";
+import PortalLogo from "@/app/PortalLogo";
+import { portalBackgroundStyle } from "@/app/portalBackground";
 import SessionExpiryWarning from "@/app/portal/SessionExpiryWarning";
 import SecureSetup from "./SecureSetup";
 
@@ -111,12 +113,14 @@ export default async function SecurePage() {
   return (
     <main
       className="min-h-screen bg-slate-50 flex items-start justify-center p-4 py-8"
+      style={portalBackgroundStyle(branding)}
       lang={locale}
       dir={definition.dir}
     >
       <div className="w-full max-w-md space-y-4">
         <div className="rounded-2xl bg-white px-4 py-2 shadow-sm">
           <LanguagePicker current={locale} label={messages.common.languageLabel} locales={offered} />
+          <PortalLogo branding={branding} alt={`${messages.common.portalName} logo`} className="mb-1 mt-2" />
         </div>
 
         {session.expiresAt && (

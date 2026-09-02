@@ -9,6 +9,8 @@ import { requestLocale } from "@/lib/i18n/server";
 import { effectiveBranding } from "@/lib/config/portal";
 import LanguagePicker from "@/app/LanguagePicker";
 import PortalFooter from "@/app/PortalFooter";
+import PortalLogo from "@/app/PortalLogo";
+import { portalBackgroundStyle } from "@/app/portalBackground";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -56,11 +58,13 @@ export default async function PortalEntryPage() {
   return (
     <main
       className="min-h-screen bg-slate-50 flex items-center justify-center p-4"
+      style={portalBackgroundStyle(branding)}
       lang={locale}
       dir={definition.dir}
     >
       <div className="bg-white rounded-2xl shadow-md w-full max-w-md p-8">
         <LanguagePicker current={locale} label={messages.common.languageLabel} locales={offered} />
+        <PortalLogo branding={branding} alt={`${messages.common.portalName} logo`} />
         <div className="mt-4 text-center">
           <h1 className="text-2xl font-bold text-slate-900 mb-2">{messages.entry.title}</h1>
           <p className="text-sm text-slate-600 leading-relaxed">{messages.entry.body}</p>
