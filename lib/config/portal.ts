@@ -14,6 +14,7 @@ import {
 } from "@/lib/guestFields/registry";
 import { secureOnboardingConfigured } from "@/lib/onboarding/providers/skynet";
 import { LOCALES } from "@/lib/i18n";
+import { appBaseUrl } from "@/lib/env";
 
 /**
  * The effective portal configuration: the operator-managed `PortalConfig` row
@@ -44,7 +45,17 @@ export interface EffectiveSponsorshipConfig {
 }
 
 const CACHE_TTL_MS = 15_000;
-let cache: { row: PortalConfig | null; fetchedAt: number } | null = null;
+
+/**
+ * Every column except the two image blobs. `portalConfigRow()` backs nearly
+ * every guest page render (sponsorship, access policy, legal text...), and
+ * those blobs can be megabytes — pulling them into memory on every request
+ * that only wants to know `sponsorshipEnabled` would be a real cost for a
+ * question the caller never asked. The two dedicated image-serving routes
+ * fetch the blobs themselves, directly, with their own targeted `select`.
+ */
+export type PortalConfigLean = Omit<PortalConfig, "logoData" | "backgroundData">;
+let cache: { row: PortalConfigLean | null; fetchedAt: number } | null = null;
 
 /** For domains and addresses, which are matched case-insensitively. */
 function parseLowerList(value: string | null | undefined): string[] {
@@ -62,12 +73,15 @@ function parseIdList(value: string | null | undefined): string[] {
     .filter(Boolean);
 }
 
-/** The stored row, cached briefly; null when absent or unreadable. */
-export async function portalConfigRow(): Promise<PortalConfig | null> {
+/** The stored row (minus the image blobs), cached briefly; null when absent or unreadable. */
+export async function portalConfigRow(): Promise<PortalConfigLean | null> {
   const now = Date.now();
   if (cache && now - cache.fetchedAt < CACHE_TTL_MS) return cache.row;
   try {
-    const row = await prisma.portalConfig.findUnique({ where: { id: "default" } });
+    const row = await prisma.portalConfig.findUnique({
+      where: { id: "default" },
+      omit: { logoData: true, backgroundData: true },
+    });
     cache = { row, fetchedAt: now };
     return row;
   } catch (err) {
@@ -178,6 +192,28 @@ export interface EffectiveBranding {
    * Extreme Platform ONE"; false = no footer line at all.
    */
   footer: boolean | null;
+  /**
+   * Always resolvable, even with nothing stored — the route itself serves
+   * the bundled Extreme mark when no override exists. A version query
+   * param keys the URL to the upload so a browser cache from before an
+   * upload (or a revert to default) is never shown stale.
+   */
+  logoUrl: string;
+  /** Whether `logoUrl` is an operator upload rather than the bundled default. */
+  hasCustomLogo: boolean;
+  /** Null when no background image has ever been set — today's plain page. */
+  backgroundUrl: string | null;
+}
+
+/** `APP_BASE_URL` if configured, else empty — a relative path still works
+ *  for the guest's own same-origin browser; only a cross-origin reader
+ *  (AURA's preview) needs the absolute form. */
+function assetBaseUrl(): string {
+  try {
+    return appBaseUrl();
+  } catch {
+    return "";
+  }
 }
 
 const HEX_COLOR_RE = /^#[0-9a-f]{6}$/i;
@@ -220,7 +256,48 @@ export async function effectiveBranding(): Promise<EffectiveBranding> {
     row?.brandAlignment === "left" || row?.brandAlignment === "right"
       ? row.brandAlignment
       : "center";
-  return { color, alignment, footer: row?.brandFooterEnabled ?? null };
+  const base = assetBaseUrl();
+  const logoVersion = row?.logoUpdatedAt?.getTime() ?? 0;
+  return {
+    color,
+    alignment,
+    footer: row?.brandFooterEnabled ?? null,
+    logoUrl: `${base}/portal-assets/logo?v=${logoVersion}`,
+    hasCustomLogo: Boolean(row?.logoMimeType),
+    // mimeType and data are always written together and cleared together —
+    // its presence stands in for the blob's without fetching the blob.
+    backgroundUrl: row?.backgroundMimeType
+      ? `${base}/portal-assets/background?v=${row.backgroundUpdatedAt?.getTime() ?? 0}`
+      : null,
+  };
+}
+
+/**
+ * The stored image bytes for one brand asset, fetched directly — never
+ * through `portalConfigRow()`'s cache, and with its own `select` so this is
+ * the only code path that ever pulls a multi-megabyte column into memory.
+ * Null when nothing is stored (the caller serves its own bundled default).
+ */
+export async function portalImageBlob(
+  kind: "logo" | "background"
+): Promise<{ data: Buffer; mimeType: string; updatedAt: Date } | null> {
+  const dataField = kind === "logo" ? "logoData" : "backgroundData";
+  const mimeField = kind === "logo" ? "logoMimeType" : "backgroundMimeType";
+  const updatedField = kind === "logo" ? "logoUpdatedAt" : "backgroundUpdatedAt";
+  try {
+    const row = await prisma.portalConfig.findUnique({
+      where: { id: "default" },
+      select: { [dataField]: true, [mimeField]: true, [updatedField]: true },
+    });
+    const data = row?.[dataField as keyof typeof row] as Buffer | null | undefined;
+    const mimeType = row?.[mimeField as keyof typeof row] as string | null | undefined;
+    const updatedAt = row?.[updatedField as keyof typeof row] as Date | null | undefined;
+    if (!data || !mimeType) return null;
+    return { data, mimeType, updatedAt: updatedAt ?? new Date(0) };
+  } catch (err) {
+    log.error("portal_image_read_failed", { kind, err });
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------

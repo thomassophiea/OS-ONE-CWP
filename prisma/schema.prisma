@@ -408,6 +408,18 @@ model PortalConfig {
   /// True = "Powered by Extreme Platform ONE" footer; false = no footer line;
   /// null = the pre-existing portal-name line.
   brandFooterEnabled Boolean?
+  /// Uploaded logo, served at /portal-assets/logo. Null = the bundled
+  /// Extreme default. Capped at 100 KB / 500x200px, checked at upload time —
+  /// this column is never written without having already passed that check.
+  logoData       Bytes?
+  logoMimeType   String?
+  logoUpdatedAt  DateTime?
+  /// Uploaded background, served at /portal-assets/background. Null = no
+  /// background image (today's plain page). Capped at 5 MB; no dimension
+  /// limit, per product direction ("background can be larger").
+  backgroundData      Bytes?
+  backgroundMimeType  String?
+  backgroundUpdatedAt DateTime?
 
   // ---- language ----
   /// Comma-separated locale codes offered to guests. Null = all eight.
